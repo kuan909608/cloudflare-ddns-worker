@@ -19,7 +19,7 @@
       "routes": [{ "pattern": "ddns-staging.example.com", "custom_domain": true }, { "pattern": "ddns-admin-staging.example.com", "custom_domain": true }],
       "vars": { "ENVIRONMENT": "staging", "DDNS_HOST": "ddns-staging.example.com", "ADMIN_HOST": "ddns-admin-staging.example.com", "ALLOW_PRIVATE_IPS": "false", "ENABLE_UNIFI_COMPAT": "true", "DETAILED_ERRORS": "false" },
       "d1_databases": [{ "binding": "DDNS_DB", "database_name": "cloudflare-ddns-staging", "database_id": "REPLACE_STAGING_D1_ID", "migrations_dir": "migrations" }],
-      "ratelimits": [{ "name": "DDNS_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }, { "name": "ADMIN_RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }]
+      "ratelimits": [{ "name": "DDNS_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }, { "name": "ADMIN_RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }, { "name": "DDNS_PREAUTH_RATE_LIMITER", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } }]
     },
     "production": {
       "name": "cloudflare-ddns-gateway-production",
@@ -27,7 +27,7 @@
       "routes": [{ "pattern": "ddns.example.com", "custom_domain": true }, { "pattern": "ddns-admin.example.com", "custom_domain": true }],
       "vars": { "ENVIRONMENT": "production", "DDNS_HOST": "ddns.example.com", "ADMIN_HOST": "ddns-admin.example.com", "ALLOW_PRIVATE_IPS": "false", "ENABLE_UNIFI_COMPAT": "true", "DETAILED_ERRORS": "false" },
       "d1_databases": [{ "binding": "DDNS_DB", "database_name": "cloudflare-ddns-production", "database_id": "REPLACE_PRODUCTION_D1_ID", "migrations_dir": "migrations" }],
-      "ratelimits": [{ "name": "DDNS_RATE_LIMITER", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } }, { "name": "ADMIN_RATE_LIMITER", "namespace_id": "2002", "simple": { "limit": 60, "period": 60 } }]
+      "ratelimits": [{ "name": "DDNS_RATE_LIMITER", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } }, { "name": "ADMIN_RATE_LIMITER", "namespace_id": "2002", "simple": { "limit": 60, "period": 60 } }, { "name": "DDNS_PREAUTH_RATE_LIMITER", "namespace_id": "2003", "simple": { "limit": 60, "period": 60 } }]
     }
   }
 }

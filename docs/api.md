@@ -10,7 +10,7 @@
 
 ## Admin
 
-Admin API 只接受 Access 驗證後的使用者。POST/PUT 僅接受 `application/json`，最大 16 KiB。路由：
+Admin API 只接受 Access 驗證後的使用者。所有 POST/PUT/DELETE 僅接受 `application/json`，最大 16 KiB；無參數 mutation 也必須傳送 `{}`，並拒絕 cross-site browser request。路由：
 
 - `GET/POST /api/admin/clients`
 - `GET/PUT/DELETE /api/admin/clients/{id}`
@@ -18,5 +18,10 @@ Admin API 只接受 Access 驗證後的使用者。POST/PUT 僅接受 `applicati
 - `GET /api/admin/clients/{id}/logs`
 - `POST /api/admin/cloudflare/validate-record`
 - `GET /api/admin/dashboard`
+- `GET /api/admin/config`
+
+`GET /api/admin/config` 只回傳非敏感 runtime 設定，管理頁用它產生當前環境的 DDNS、curl 與 UniFi URL。Client list/detail 的 `currentDnsIp` 由 Cloudflare DNS API 即時取得；`lastIp` 仍代表最後一次 Gateway 更新狀態。Dashboard 的 recent success/failure 是最近 24 小時 `update_logs` 事件數。
+
+非 localhost 的 HTTP request 會在解析 Authorization 前以 400 拒絕。DDNS 先按可信 `CF-Connecting-IP` 套用 60/min pre-auth limiter，再於 Token 成功後套用每 Client 10/min limiter；未知 slug 與錯誤 Token 不會消耗合法 Client bucket。
 
 Create/rotate response 是唯一包含明文 token 的 response。Browser 只能把它留在未持久化記憶體。

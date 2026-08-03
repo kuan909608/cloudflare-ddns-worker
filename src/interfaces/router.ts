@@ -1,12 +1,14 @@
-import { AdminClientsUseCase, publicClient } from '../application/admin-clients';
+import { AdminClientsUseCase } from '../application/admin-clients';
+import { runAudited } from '../application/admin-audit';
 import { DdnsUpdateUseCase } from '../application/ddns-update';
 import { AppError, errors } from '../domain/errors';
 import { D1ClientRepository } from '../infrastructure/d1-client-repository';
 import { enforceRateLimit } from '../middleware/rate-limit';
 import { verifyAccess } from '../services/access-service';
 import { CloudflareDnsService } from '../services/cloudflare-dns-service';
+import { rateLimitSource } from '../services/ip-service';
 import type { Env } from '../types';
-import { basicCredentials, errorResponse, json, strictJson, success } from '../utils/http';
+import { basicCredentials, boundedInteger, enforceSameOrigin, errorResponse, json, strictEmptyJson, strictJson, success } from '../utils/http';
 import { securityHeaders } from '../utils/security';
 
 const idPattern = '[0-9a-fA-F-]{36}';
@@ -18,7 +20,13 @@ async function ddns(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.body !== null) throw errors.badRequest('Request body must be empty');
   const match = url.pathname.match(/^\/api\/ddns\/([a-z0-9][a-z0-9-]{1,62})$/u); if (!match) throw errors.notFound();
   const repository = new D1ClientRepository(env.DDNS_DB);
-  const useCase = new DdnsUpdateUseCase(repository, new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN), env.ALLOW_PRIVATE_IPS === 'true', (clientId) => enforceRateLimit(env.DDNS_DB, env.DDNS_RATE_LIMITER, clientId, 10));
+  const useCase = new DdnsUpdateUseCase(
+    repository,
+    new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN),
+    env.ALLOW_PRIVATE_IPS === 'true',
+    (incoming) => enforceRateLimit(env.DDNS_DB, env.DDNS_PREAUTH_RATE_LIMITER, `ddns-preauth:${rateLimitSource(incoming)}`, 60),
+    (clientId) => enforceRateLimit(env.DDNS_DB, env.DDNS_RATE_LIMITER, `ddns-client:${clientId}`, 10),
+  );
   const result = await useCase.execute(match[1]!, request);
   return json({ success: true, updated: result.updated });
 }
@@ -31,44 +39,52 @@ async function unifiCompat(request: Request, env: Env, url: URL, slug: string): 
   const credentials = basicCredentials(request);
   if (!credentials || credentials.username !== slug) throw errors.unauthorized();
   const repository = new D1ClientRepository(env.DDNS_DB);
-  const useCase = new DdnsUpdateUseCase(repository, new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN), env.ALLOW_PRIVATE_IPS === 'true', (clientId) => enforceRateLimit(env.DDNS_DB, env.DDNS_RATE_LIMITER, clientId, 10));
+  const useCase = new DdnsUpdateUseCase(
+    repository,
+    new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN),
+    env.ALLOW_PRIVATE_IPS === 'true',
+    (incoming) => enforceRateLimit(env.DDNS_DB, env.DDNS_PREAUTH_RATE_LIMITER, `ddns-preauth:${rateLimitSource(incoming)}`, 60),
+    (clientId) => enforceRateLimit(env.DDNS_DB, env.DDNS_RATE_LIMITER, `ddns-client:${clientId}`, 10),
+  );
   const result = await useCase.executeWithToken(slug, request, credentials.password);
   return new Response(`${result.updated ? 'good' : 'nochg'} ${result.ip}\n`, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   const identity = await verifyAccess(request, env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD, env.ADMIN_ALLOWED_EMAILS);
-  await enforceRateLimit(env.DDNS_DB, env.ADMIN_RATE_LIMITER, identity.email, 60);
   if (!url.pathname.startsWith('/api/admin/')) return env.ASSETS.fetch(request);
+  await enforceRateLimit(env.DDNS_DB, env.ADMIN_RATE_LIMITER, `admin:${identity.email}`, 60);
+  if (['POST', 'PUT', 'DELETE'].includes(request.method)) enforceSameOrigin(request, env.ADMIN_HOST);
   const repository = new D1ClientRepository(env.DDNS_DB); const useCase = new AdminClientsUseCase(repository, new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN));
   const listPath = url.pathname === '/api/admin/clients';
   const clientMatch = url.pathname.match(new RegExp(`^/api/admin/clients/(${idPattern})$`, 'u'));
   const actionMatch = url.pathname.match(new RegExp(`^/api/admin/clients/(${idPattern})/(enable|disable|rotate-token|logs)$`, 'u'));
   let response: Response;
-  let audit: { action: string; target: string | null } | null = null;
-  if (url.pathname === '/api/admin/dashboard' && request.method === 'GET') response = success(await repository.dashboard());
-  else if (listPath && request.method === 'GET') response = success((await repository.list()).map(publicClient));
-  else if (listPath && request.method === 'POST') { const result = await useCase.create(await strictJson(request)); audit = { action: 'client.create', target: result.client.id }; response = success(result, 201); }
-  else if (clientMatch && request.method === 'GET') { const found = await repository.findById(clientMatch[1]!); if (!found) throw errors.notFound(); response = success(publicClient(found)); }
-  else if (clientMatch && request.method === 'PUT') { const result = await useCase.update(clientMatch[1]!, await strictJson(request)); audit = { action: 'client.update', target: result.id }; response = success(result); }
-  else if (clientMatch && request.method === 'DELETE') { const removed = await repository.remove(clientMatch[1]!); if (!removed) throw errors.notFound(); audit = { action: 'client.delete', target: clientMatch[1]! }; response = success({ deleted: true }); }
-  else if (actionMatch && actionMatch[2] === 'logs' && request.method === 'GET') { const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? 50))); const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0)); response = success(await repository.logs(actionMatch[1]!, limit, offset)); }
+  if (url.pathname === '/api/admin/config' && request.method === 'GET') response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.DDNS_HOST}`, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' });
+  else if (url.pathname === '/api/admin/dashboard' && request.method === 'GET') response = success(await repository.dashboard());
+  else if (listPath && request.method === 'GET') response = success(await useCase.list());
+  else if (listPath && request.method === 'POST') { const result = await runAudited(repository, identity.email, 'client.create', async () => useCase.create(await strictJson(request)), (value) => value.client.id); response = success(result, 201); }
+  else if (clientMatch && request.method === 'GET') response = success(await useCase.get(clientMatch[1]!));
+  else if (clientMatch && request.method === 'PUT') { const id = clientMatch[1]!; const result = await runAudited(repository, identity.email, 'client.update', async () => useCase.update(id, await strictJson(request)), () => id, id); response = success(result); }
+  else if (clientMatch && request.method === 'DELETE') { const id = clientMatch[1]!; const result = await runAudited(repository, identity.email, 'client.delete', async () => { await strictEmptyJson(request); if (!(await repository.remove(id))) throw errors.notFound(); return { deleted: true }; }, () => id, id); response = success(result); }
+  else if (actionMatch && actionMatch[2] === 'logs' && request.method === 'GET') { const limit = boundedInteger(url.searchParams.get('limit'), 50, 1, 100); const offset = boundedInteger(url.searchParams.get('offset'), 0, 0, 1_000_000); response = success(await repository.logs(actionMatch[1]!, limit, offset)); }
   else if (actionMatch && request.method === 'POST') {
     const [id, action] = [actionMatch[1]!, actionMatch[2]!];
-    if (action === 'rotate-token') { const result = await useCase.rotate(id); audit = { action: 'client.rotate-token', target: id }; response = success(result); }
-    else { const result = await repository.setEnabled(id, action === 'enable'); if (!result) throw errors.notFound(); audit = { action: `client.${action}`, target: id }; response = success(publicClient(result)); }
-  } else if (url.pathname === '/api/admin/cloudflare/validate-record' && request.method === 'POST') { response = success(await useCase.validate(await strictJson(request))); }
+    if (action === 'rotate-token') { const result = await runAudited(repository, identity.email, 'client.rotate-token', async () => { await strictEmptyJson(request); return useCase.rotate(id); }, () => id, id); response = success(result); }
+    else { const result = await runAudited(repository, identity.email, `client.${action}`, async () => { await strictEmptyJson(request); const changed = await repository.setEnabled(id, action === 'enable'); if (!changed) throw errors.notFound(); return useCase.get(id); }, () => id, id); response = success(result); }
+  } else if (url.pathname === '/api/admin/cloudflare/validate-record' && request.method === 'POST') { const record = await runAudited(repository, identity.email, 'cloudflare.validate-record', async () => useCase.validate(await strictJson(request)), () => null); response = success(record); }
   else throw errors.notFound();
-  if (audit) await repository.audit(identity.email, audit.action, audit.target, 'success');
   return response;
 }
 
 export async function route(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url); let response: Response;
+    const localDevelopment = env.ENVIRONMENT !== 'production' && ['localhost', '127.0.0.1'].includes(url.hostname);
+    if (url.protocol !== 'https:' && !localDevelopment) throw errors.badRequest('HTTPS required');
     if (url.hostname === env.DDNS_HOST) response = await ddns(request, env, url);
     else if (url.hostname === env.ADMIN_HOST) response = await admin(request, env, url);
-    else if (env.ENVIRONMENT !== 'production' && ['localhost', '127.0.0.1'].includes(url.hostname)) response = url.pathname.startsWith('/api/ddns/') ? await ddns(request, env, url) : await admin(request, env, url);
+    else if (localDevelopment) response = url.pathname.startsWith('/api/ddns/') ? await ddns(request, env, url) : await admin(request, env, url);
     else throw errors.notFound();
     return securityHeaders(response);
   } catch (error) {

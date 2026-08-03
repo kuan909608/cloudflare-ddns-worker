@@ -5,6 +5,7 @@ export interface RateLimitBinding {
 export interface Env {
   DDNS_DB: D1Database;
   ASSETS: Fetcher;
+  DDNS_PREAUTH_RATE_LIMITER?: RateLimitBinding;
   DDNS_RATE_LIMITER?: RateLimitBinding;
   ADMIN_RATE_LIMITER?: RateLimitBinding;
   CLOUDFLARE_DNS_API_TOKEN: string;

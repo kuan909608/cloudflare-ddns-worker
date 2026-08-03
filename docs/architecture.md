@@ -19,7 +19,7 @@ flowchart LR
 
 - `domain`: Client、log 與錯誤等純業務模型。
 - `application`: 更新與管理 use cases，協調 repository/service。
-- `repositories`: persistence ports。
+- `repositories`: D1 persistence 與 DNS record gateway ports；application 不依賴 Cloudflare adapter 實作。
 - `infrastructure`: D1、Cloudflare DNS、Access JWKS adapters。
 - `interfaces`: HTTP router、request/response DTO。
 - `middleware`: Access、rate limit、安全標頭與 body policy。
@@ -29,14 +29,14 @@ Worker 是無狀態協調層。D1 是設定、狀態與 audit 的唯一資料來
 
 ## 安全決策
 
-1. Client 只提交 Bearer credential，來源 IP 永遠取自 Cloudflare 注入/轉送 header。
+1. Client 只提交 Bearer credential；非 localhost 的 HTTP 在解析 credential 前拒絕，來源 IP 永遠取自 Cloudflare 注入/轉送 header。
    UniFi adapter 預設啟用，將 Basic password 轉交相同 token use case；可用獨立 feature flag 關閉，且不允許 query token。
 2. Token 以 32-byte CSPRNG 產生，只存 SHA-256；輪替單一 D1 update 立即取代舊 hash。
 3. Client 與 record 為一對一；更新 use case 不接收任何 record/IP 欄位。
-4. 原生 Rate Limiting binding 以 client id/email 分桶；其 eventual consistency 特性適合 abuse mitigation，不作計費。沒有 binding 時採 D1 固定窗口 fallback。
+4. 原生 Rate Limiting binding 分成來源 IP pre-auth、驗證後 client id、管理者 email 三層；其 eventual consistency 特性適合 abuse mitigation，不作計費。沒有 binding 時採 D1 固定窗口 fallback，並持續清除過期窗口。
 5. Cloudflare API adapter 只回傳正規化錯誤碼，response/log 都經 redaction。
 6. Static assets 也先經 Worker host 與 Access 驗證；不讓直接 assets bypass。
 
 ## 可用性與一致性
 
-DNS 更新成功後才更新 Client last-state 和 log。D1 狀態寫入失敗時 DNS 可能已成功（分散式系統無法原子化），記錄為可觀測性風險；下一次請求會重新讀 DNS 並自我收斂。Cloudflare API 設定 timeout，所有外部錯誤對 Client 統一為 502。
+DNS 更新成功後才更新 Client last-state 和 log。Cloudflare DNS 結果與 D1 persistence error 分開處理：DNS 已成功時即使 D1 狀態暫時失敗仍回傳真實成功，不會誤標為 DNS failure；下一次管理查詢會直接讀 DNS 現況。管理 mutation 先寫 `started` audit，無法建立 intent 時 fail closed。Cloudflare API 設定 timeout，真正的外部錯誤對 Client 統一為 502。

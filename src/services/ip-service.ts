@@ -41,6 +41,11 @@ function isPublicIpv4(parts: number[]): boolean {
     (a === 203 && b === 0 && c === 113));
 }
 
+function isPrivateIpv4(parts: number[]): boolean {
+  const [a, b] = parts as [number, number, number, number];
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
 function isPublicIpv6(parts: number[]): boolean {
   const first = parts[0]!;
   const allZero = parts.every((part) => part === 0);
@@ -49,18 +54,32 @@ function isPublicIpv6(parts: number[]): boolean {
   const linkLocal = (first & 0xffc0) === 0xfe80;
   const uniqueLocal = (first & 0xfe00) === 0xfc00;
   const documentation = first === 0x2001 && parts[1] === 0x0db8;
-  return !(allZero || loopback || multicast || linkLocal || uniqueLocal || documentation);
+  const ipv4Mapped = parts.slice(0, 5).every((part) => part === 0) && parts[5] === 0xffff;
+  const globalUnicast = (first & 0xe000) === 0x2000;
+  const benchmarking = first === 0x2001 && parts[1] === 0x0002 && parts[2] === 0;
+  const orchid = first === 0x2001 && (((parts[1]! & 0xfff0) === 0x0010) || ((parts[1]! & 0xfff0) === 0x0020));
+  return globalUnicast && !(allZero || loopback || multicast || linkLocal || uniqueLocal || documentation || ipv4Mapped || benchmarking || orchid);
 }
 
 export function isAllowedIp(value: string, recordType: RecordType, allowPrivate = false): boolean {
   const v4 = parseIpv4(value);
-  if (recordType === 'A') return Boolean(v4 && (allowPrivate || isPublicIpv4(v4)));
+  if (recordType === 'A') return Boolean(v4 && (isPublicIpv4(v4) || (allowPrivate && isPrivateIpv4(v4))));
   const v6 = ipv6Segments(value);
-  return Boolean(v6 && (allowPrivate || isPublicIpv6(v6)));
+  const uniqueLocal = Boolean(v6 && (v6[0]! & 0xfe00) === 0xfc00);
+  return Boolean(v6 && (isPublicIpv6(v6) || (allowPrivate && uniqueLocal)));
 }
 
 export function sourceIp(request: Request, recordType: RecordType, allowPrivate = false): string | null {
-  const candidates = [request.headers.get('CF-Connecting-IP'), ...(request.headers.get('X-Forwarded-For') ?? '').split(',')]
-    .map((item) => item?.trim()).filter((item): item is string => Boolean(item));
-  return candidates.find((candidate) => isAllowedIp(candidate, recordType, allowPrivate)) ?? null;
+  const connectingIp = request.headers.get('CF-Connecting-IP')?.trim();
+  if (connectingIp) {
+    if (isAllowedIp(connectingIp, recordType, allowPrivate)) return connectingIp;
+    if (ipVersion(connectingIp) !== null) return null;
+  }
+  const forwarded = (request.headers.get('X-Forwarded-For') ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+  return forwarded.find((candidate) => isAllowedIp(candidate, recordType, allowPrivate)) ?? null;
+}
+
+export function rateLimitSource(request: Request): string {
+  const connectingIp = request.headers.get('CF-Connecting-IP')?.trim().toLowerCase();
+  return connectingIp && ipVersion(connectingIp) !== null ? connectingIp : 'unknown';
 }

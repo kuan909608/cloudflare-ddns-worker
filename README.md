@@ -61,7 +61,7 @@ Cloudflare Dashboard → My Profile → API Tokens → Create Custom Token：
 - Zone Resources：Include / Specific zone / 只選實際使用 zone
 - 可加 client IP filter 與期限；不同環境用不同 token
 
-不要使用 Global API Key。不要把 token 寫入 Git、D1、前端或 workflow 文字；以 Wrangler secret 設定：
+不要使用 Global API Key。不要把 token 寫入 Git、D1 或前端；以 Wrangler secret 設定：
 
 ```bash
 npx wrangler secret put CLOUDFLARE_DNS_API_TOKEN --env staging
@@ -94,13 +94,13 @@ npm run deploy:staging
 npm run deploy:production
 ```
 
-Worker Static Assets 以 `run_worker_first` 保證 Vue 資產也先經 host/Access gate。若帳戶方案不提供 Rate Limiting binding，移除該環境的 `ratelimits` 設定；程式會使用 D1 固定窗口 fallback。原生 binding 是 eventually consistent abuse control，不作精準計費。
+Worker Static Assets 以 `run_worker_first` 保證 Vue 資產也先經 host/Access gate。Cloudflare SSL/TLS mode 必須使用 **Full (strict)**，Edge Certificates 必須啟用 **Always Use HTTPS**；Worker 仍會在讀取 Authorization 前拒絕 custom domain 的明文 HTTP。若帳戶方案不提供 Rate Limiting binding，移除該環境的 `ratelimits` 設定；程式會使用 D1 固定窗口 fallback。三個 limiter 分別是來源 IP pre-auth 60/min、驗證成功後每 Client 10/min、每管理者 60/min。原生 binding 是 eventually consistent abuse control，不作精準計費。
 
 ## Client 操作
 
-登入管理頁後新增 Client，輸入 Cloudflare zone/record 的 ID、名稱與 A/AAAA type。後端會向 Cloudflare API 核對且 D1 unique index 防止重複綁定。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
+登入管理頁後新增 Client，輸入 Cloudflare zone/record 的 ID、名稱與 A/AAAA type。後端會向 Cloudflare API 完整核對 record ID、zone ID、名稱與 type，且 D1 unique index 防止重複綁定。Client 清單與詳情的 `currentDnsIp` 來自 Cloudflare 即時查詢；`lastIp` 只代表最後一次 Gateway 更新。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
 
-輪替 Token 會用單一 D1 update 立即取代 hash，舊 token 隨即失效。刪除、停用與輪替都有確認步驟並留下 admin audit。
+輪替 Token 會用單一 D1 update 立即取代 hash，舊 token 隨即失效。刪除、停用與輪替都有確認步驟。每個管理 mutation 會先持久化 `started` audit；起始 audit 失敗時操作 fail closed，完成後再寫入 success/failure，避免操作完全無法歸因。
 
 ### curl
 
@@ -126,7 +126,7 @@ UniFi Network 的 Custom DDNS 由 Inadyn 驅動，會用 GET 與 HTTP Basic Auth
 伺服器：ddns.example.com/api/compat/unifi/linhome?hostname=
 ```
 
-部分 UniFi 版本要求 Server 不含 `https://`；Inadyn 預設仍使用 HTTPS。若該版本接受完整 scheme，可改填 `https://ddns.example.com/api/compat/unifi/linhome?hostname=`。`?hostname=` 是給 Inadyn 附加 hostname 的相容位置；Worker 會完全忽略它。
+部分 UniFi 版本要求 Server 不含 `https://`；僅可在已確認該韌體的 Inadyn 固定使用 HTTPS、且 Cloudflare 已啟用 Always Use HTTPS 時採此格式。若該版本接受完整 scheme，必須優先填 `https://ddns.example.com/api/compat/unifi/linhome?hostname=`。`?hostname=` 是給 Inadyn 附加 hostname 的相容位置；Worker 會完全忽略它。若封包測試顯示設備送出 HTTP，請勿使用相容模式，改用支援 HTTPS POST 的排程腳本。
 
 相容請求的語意為：
 
@@ -147,7 +147,7 @@ Authorization: Basic base64(linhome:ddns_CLIENT_TOKEN)
 
 若 UniFi 韌體能直接送 POST 與自訂 Bearer header，仍優先使用主要 `/api/ddns/{slug}` 端點。
 
-不要把 record hostname 填進任何會讓 provider 決定更新目標的欄位；本系統永遠以 slug 查 D1 固定綁定。
+UniFi 的「主機名稱」欄位請填該 Client 已綁定的 record name，供 Inadyn 組合請求；Worker 不採用此 query 值決定目標，永遠只以 slug 查 D1 固定綁定。
 
 ## FortiGate
 
@@ -175,11 +175,32 @@ npm run test:coverage
 npm run build
 ```
 
-Vitest 覆蓋 token/hash/constant-time、IP family 與禁止範圍、header precedence、body/content type/size、security headers、redaction、輸入 injection 與 token hash response omission。整合測試應在專屬 development D1/zone 跑 Access 偽造、audience/expiration、Cloudflare API mock、disabled client、rate limit、SQL/path/query injection；production 禁止以真實 token 當 fixture。
+Vitest 覆蓋 Worker/Admin HTTP routes、token/hash/constant-time、Access JWT 偽造/audience/expiration、Cloudflare API mock、D1 repository、rate limit、IP family 與禁止範圍、header precedence、串流 body/content type/size、security headers、redaction、SQL/path/query injection、前端 Client payload 與 runtime URL。Coverage 對整個後端核心計算並強制 lines/functions/statements 90%、branches 85%；production 禁止以真實 token 當 fixture。
 
-## CI/CD
+## 本機驗證與 Cloudflare Git 部署
 
-PR 執行 lint、typecheck、coverage、build、`npm audit`。main 自動部署 staging；production 只允許手動 workflow，且 GitHub `production` Environment 必須設定 required reviewer。GitHub secrets 只放部署用 Cloudflare token/account ID，絕不放 Client token 或 DNS token（DNS token已直接設在 Worker environment）。
+Repository 不包含 GitHub Actions、Dependabot 或其他 GitHub 自動化。每次變更先在本機依序執行：
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm audit --audit-level=high
+```
+
+確認全部通過後，將 repository 從 Cloudflare Dashboard 手動關聯到 Worker：
+
+1. Workers & Pages → 選擇 Worker → Settings → Builds → Connect。
+2. 授權 Cloudflare Workers & Pages GitHub App 只存取此 repository。
+3. Production branch 選 `main`；不需要 preview 時關閉 non-production branch builds。
+4. Build command 設為 `npm run build:frontend`。
+5. Deploy command 設為 `npx wrangler deploy --env production`。
+6. Root directory 保持 `/`。
+7. D1 migration 在首次部署及每次 schema 變更前，由管理者在本機手動執行 `npm run db:migrate:production`。
+
+關聯後，Cloudflare Workers Builds 會在 `main` push 時建置及部署；這是 Cloudflare 管理的 Git integration，不需要 repository 內的 CI workflow。Client Token 與 Cloudflare DNS API Token 不得放進 GitHub repository、build variables 或部署輸出；Worker runtime secrets 必須在 Cloudflare Worker environment 設定。
 
 ## 備份、匯出與還原
 
@@ -205,7 +226,7 @@ npx wrangler d1 time-travel restore cloudflare-ddns-production --bookmark REPLAC
 - `401 Unauthorized`：token 缺漏/錯誤/已輪替；不要把 Authorization 貼進 log。
 - UniFi 相容端點 `404`：確認該環境沒有把 `ENABLE_UNIFI_COMPAT` 改為 `false`，且使用的是正確 DDNS hostname。
 - `403 Client disabled`：由 Access 管理頁啟用；Admin 的 403 則檢查 Access AUD、team domain 與 email allowlist。
-- `400 No valid public source IP`：record family 不符、CGNAT/private/link-local，或不是經 Cloudflare custom domain 呼叫。`ALLOW_PRIVATE_IPS` 預設 false，不建議 production 開啟。
+- `400 No valid public source IP`：record family 不符、CGNAT/private/link-local，或不是經 Cloudflare custom domain 呼叫。`ALLOW_PRIVATE_IPS` 預設 false；開啟時只額外允許 RFC1918/IPv6 ULA，loopback、unspecified、link-local、multicast 等仍永久拒絕，不建議 production 開啟。
 - `409`：slug、record ID 或 record name 已綁定。
 - `502`：DNS token scope、zone/record 綁定或 Cloudflare API 問題；Client response 刻意不含上游細節。
 - Vue 404/Access bypass：確認 assets `run_worker_first:true`，管理 hostname 已納入 Access application，且沒有 Bypass policy。

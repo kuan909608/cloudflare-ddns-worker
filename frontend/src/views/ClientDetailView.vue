@@ -1,2 +1,90 @@
-<script setup lang="ts">import{computed,onMounted,ref}from'vue';import{useRouter}from'vue-router';import StatusBadge from'../components/StatusBadge.vue';import TokenModal from'../components/TokenModal.vue';import{adminApi}from'../services/api';import type{Client,UpdateLog}from'../types';const props=defineProps<{id:string}>();const router=useRouter();const client=ref<Client>();const logs=ref<UpdateLog[]>([]);const token=ref('');const url=computed(()=>client.value?`https://ddns.example.com/api/ddns/${client.value.slug}`:'');async function load(){client.value=await adminApi.client(props.id);logs.value=await adminApi.logs(props.id);}onMounted(load);async function toggle(){if(!client.value)return;client.value=await adminApi.action(props.id,client.value.enabled?'disable':'enable');}async function rotate(){if(!confirm('舊 Token 將立即失效。確定輪替？'))return;const r=await adminApi.rotate(props.id);client.value=r.client;token.value=r.token;}async function remove(){if(!confirm('將刪除此 Client 與更新紀錄，無法復原。確定？'))return;await adminApi.remove(props.id);await router.push('/clients');}async function copy(value:string){await navigator.clipboard.writeText(value);}</script>
-<template><div v-if="client"><div class="mb-6 flex flex-wrap items-center gap-2"><h1 class="mr-auto text-2xl font-bold">{{client.displayName}}</h1><RouterLink class="btn-secondary" :to="`/clients/${id}/edit`">編輯</RouterLink><button class="btn-secondary" @click="toggle">{{client.enabled?'停用':'啟用'}}</button><button class="btn-secondary" @click="rotate">輪替 Token</button><button class="btn-danger" @click="remove">刪除</button></div><div class="grid gap-4 lg:grid-cols-2"><section class="card space-y-3"><h2 class="font-bold">連線資訊</h2><div><span class="text-slate-400">DDNS URL</span><code class="mt-1 block break-all">{{url}}</code></div><button class="btn-secondary" @click="copy(url)">複製 URL</button><button class="btn-secondary" @click="copy(`curl -X POST ${url} -H 'Authorization: Bearer &lt;CLIENT_TOKEN&gt;'`)">複製 curl 範例</button><button class="btn-secondary" @click="copy(`服務: 自訂\n主機名稱: ${client.recordName}\n使用者名稱: ${client.slug}\n密碼: &lt;CLIENT_TOKEN&gt;\n伺服器: ddns.example.com/api/compat/unifi/${client.slug}?hostname=`)">複製 UniFi 設定</button><p>Token：已設定（建立於 {{client.tokenCreatedAt}}）</p></section><section class="card space-y-2"><h2 class="font-bold">DNS Record</h2><p>{{client.recordName}} · {{client.recordType}}</p><p>目前 IP：{{client.lastIp??'—'}}</p><p>來源 IP：{{client.lastSourceIp??'—'}}</p><p>狀態：<StatusBadge :value="client.enabled"/> <StatusBadge :value="client.lastStatus"/></p></section></div><section class="card mt-4"><h2 class="mb-3 font-bold">最近更新紀錄</h2><div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead><tr><th>時間</th><th>來源</th><th>舊 IP</th><th>新 IP</th><th>結果</th></tr></thead><tbody><tr v-for="log in logs" :key="log.id" class="border-t border-slate-800"><td class="py-2">{{log.createdAt}}</td><td>{{log.sourceIp}}</td><td>{{log.oldIp??'—'}}</td><td>{{log.newIp}}</td><td>{{log.status}}</td></tr></tbody></table></div></section><TokenModal v-if="token" :token="token" :slug="client.slug" :hostname="client.recordName" @close="token=''"/></div></template>
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import StatusBadge from '../components/StatusBadge.vue';
+import TokenModal from '../components/TokenModal.vue';
+import { adminApi } from '../services/api';
+import { curlCommand, ddnsUpdateUrl, unifiSettings } from '../services/connection-details';
+import type { Client, UpdateLog } from '../types';
+
+const props = defineProps<{ id: string }>();
+const router = useRouter();
+const client = ref<Client>();
+const logs = ref<UpdateLog[]>([]);
+const token = ref('');
+const ddnsOrigin = ref('');
+const url = computed(() => client.value ? ddnsUpdateUrl(ddnsOrigin.value, client.value.slug) : '');
+
+async function load() {
+  const [loadedClient, loadedLogs, config] = await Promise.all([
+    adminApi.client(props.id), adminApi.logs(props.id), adminApi.config(),
+  ]);
+  client.value = loadedClient;
+  logs.value = loadedLogs;
+  ddnsOrigin.value = config.ddnsOrigin;
+}
+
+onMounted(load);
+
+async function toggle() {
+  if (!client.value) return;
+  if (client.value.enabled && !confirm('停用後此 Client 將無法更新 DNS。確定停用？')) return;
+  client.value = await adminApi.action(props.id, client.value.enabled ? 'disable' : 'enable');
+}
+
+async function rotate() {
+  if (!confirm('舊 Token 將立即失效。確定輪替？')) return;
+  const result = await adminApi.rotate(props.id);
+  client.value = result.client;
+  token.value = result.token;
+}
+
+async function remove() {
+  if (!confirm('將刪除此 Client 與更新紀錄，無法復原。確定？')) return;
+  await adminApi.remove(props.id);
+  await router.push('/clients');
+}
+
+async function copy(value: string) {
+  await navigator.clipboard.writeText(value);
+}
+</script>
+
+<template>
+  <div v-if="client">
+    <div class="mb-6 flex flex-wrap items-center gap-2">
+      <h1 class="mr-auto text-2xl font-bold">{{ client.displayName }}</h1>
+      <RouterLink class="btn-secondary" :to="`/clients/${id}/edit`">編輯</RouterLink>
+      <button class="btn-secondary" @click="toggle">{{ client.enabled ? '停用' : '啟用' }}</button>
+      <button class="btn-secondary" @click="rotate">輪替 Token</button>
+      <button class="btn-danger" @click="remove">刪除</button>
+    </div>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="card space-y-3">
+        <h2 class="font-bold">連線資訊</h2>
+        <div><span class="text-slate-400">DDNS URL</span><code class="mt-1 block break-all">{{ url }}</code></div>
+        <button class="btn-secondary" @click="copy(url)">複製 URL</button>
+        <button class="btn-secondary" @click="copy(curlCommand(ddnsOrigin, client.slug, '&lt;CLIENT_TOKEN&gt;'))">複製 curl 範例</button>
+        <button class="btn-secondary" @click="copy(unifiSettings(ddnsOrigin, client.slug, client.recordName, '&lt;CLIENT_TOKEN&gt;'))">複製 UniFi 設定</button>
+        <p>Token：已設定（建立於 {{ client.tokenCreatedAt }}）</p>
+      </section>
+      <section class="card space-y-2">
+        <h2 class="font-bold">DNS Record</h2>
+        <p>{{ client.recordName }} · {{ client.recordType }}</p>
+        <p>目前 IP：{{ client.currentDnsIp ?? '—' }}</p>
+        <p>來源 IP：{{ client.lastSourceIp ?? '—' }}</p>
+        <p>狀態：<StatusBadge :value="client.enabled" /> <StatusBadge :value="client.lastStatus" /></p>
+      </section>
+    </div>
+    <section class="card mt-4">
+      <h2 class="mb-3 font-bold">最近更新紀錄</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead><tr><th>時間</th><th>來源</th><th>舊 IP</th><th>新 IP</th><th>結果</th></tr></thead>
+          <tbody><tr v-for="log in logs" :key="log.id" class="border-t border-slate-800"><td class="py-2">{{ log.createdAt }}</td><td>{{ log.sourceIp }}</td><td>{{ log.oldIp ?? '—' }}</td><td>{{ log.newIp }}</td><td>{{ log.status }}</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <TokenModal v-if="token" :token="token" :slug="client.slug" :ddns-origin="ddnsOrigin" :hostname="client.recordName" @close="token = ''" />
+  </div>
+</template>

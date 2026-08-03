@@ -1,10 +1,8 @@
 import { errors } from '../domain/errors';
-import type { RecordType } from '../domain/models';
+import type { DnsRecord, DnsRecordGateway } from '../repositories/dns-record-gateway';
 
 interface ApiEnvelope<T> { success: boolean; result: T; }
-export interface DnsRecord { id: string; zoneId: string; zoneName: string; name: string; type: RecordType; content: string; ttl: number; proxied?: boolean; }
-
-export class CloudflareDnsService {
+export class CloudflareDnsService implements DnsRecordGateway {
   constructor(private readonly token: string) {}
   private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, { ...init, signal: AbortSignal.timeout(8_000), headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json', ...init.headers } });

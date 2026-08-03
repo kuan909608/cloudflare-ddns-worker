@@ -21,6 +21,7 @@ export interface Client {
 }
 
 export interface PublicClient extends Omit<Client, 'tokenHash'> {
+  currentDnsIp: string | null;
   tokenConfigured: true;
 }
 

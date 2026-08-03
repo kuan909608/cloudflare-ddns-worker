@@ -18,6 +18,7 @@ paths:
       parameters: [{ name: clientSlug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }]
       responses:
         '200': { description: Updated or unchanged, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateResult' } } } }
+        '400': { description: HTTPS required or no valid source IP }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: Client disabled }
         '429': { description: Rate limited }
@@ -31,6 +32,7 @@ paths:
       parameters: [{ name: clientSlug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }]
       responses:
         '200': { description: Inadyn-compatible result, content: { text/plain: { schema: { type: string }, examples: { updated: { value: 'good 203.0.113.10' }, unchanged: { value: 'nochg 203.0.113.10' } } } } }
+        '400': { description: HTTPS required or rejected query parameter }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: Client disabled }
         '404': { description: Compatibility mode disabled }
@@ -38,6 +40,13 @@ paths:
         '502': { description: DNS update failed }
   /api/admin/dashboard:
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Dashboard counters }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /api/admin/config:
+    get:
+      tags: [Admin]
+      security: [{ accessJwt: [] }]
+      responses:
+        '200': { description: Safe runtime configuration, content: { application/json: { schema: { $ref: '#/components/schemas/AdminConfigEnvelope' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/admin/clients:
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Client list }, '403': { $ref: '#/components/responses/Forbidden' } } }
     post:
@@ -49,14 +58,14 @@ paths:
     parameters: [{ $ref: '#/components/parameters/ClientId' }]
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Client detail }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { description: Not found } } }
     put: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }, responses: { '200': { description: Updated }, '403': { $ref: '#/components/responses/Forbidden' } } }
-    delete: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Deleted }, '403': { $ref: '#/components/responses/Forbidden' } } }
+    delete: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { $ref: '#/components/requestBodies/EmptyJson' }, responses: { '200': { description: Deleted }, '403': { $ref: '#/components/responses/Forbidden' }, '415': { description: JSON Content-Type required } } }
   /api/admin/clients/{id}/{action}:
     parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: action, in: path, required: true, schema: { enum: [enable, disable, rotate-token] } }]
-    post: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Action completed; rotate-token includes one-time token }, '403': { $ref: '#/components/responses/Forbidden' } } }
+    post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { $ref: '#/components/requestBodies/EmptyJson' }, responses: { '200': { description: Action completed; rotate-token includes one-time token }, '403': { $ref: '#/components/responses/Forbidden' }, '415': { description: JSON Content-Type required } } }
   /api/admin/clients/{id}/logs:
-    get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ $ref: '#/components/parameters/ClientId' }], responses: { '200': { description: Update logs }, '403': { $ref: '#/components/responses/Forbidden' } } }
+    get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }, { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }], responses: { '200': { description: Update logs }, '400': { description: Invalid pagination }, '403': { $ref: '#/components/responses/Forbidden' } } }
   /api/admin/cloudflare/validate-record:
-    post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }, responses: { '200': { description: Validated DNS record }, '403': { $ref: '#/components/responses/Forbidden' } } }
+    post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecordInput' } } } }, responses: { '200': { description: Validated DNS record }, '403': { $ref: '#/components/responses/Forbidden' } } }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: 'ddns_<random>' }
@@ -64,9 +73,13 @@ components:
     accessJwt: { type: apiKey, in: header, name: Cf-Access-Jwt-Assertion, description: Injected by Cloudflare Access; never log or persist. }
   parameters:
     ClientId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  requestBodies:
+    EmptyJson: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, maxProperties: 0 }, example: {} } } }
   schemas:
     UpdateResult: { type: object, required: [success, updated], properties: { success: { const: true }, updated: { type: boolean } } }
     ClientInput: { type: object, additionalProperties: false, required: [displayName, slug, zoneId, zoneName, recordId, recordName, recordType], properties: { displayName: { type: string }, slug: { type: string }, zoneId: { type: string }, zoneName: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
+    RecordInput: { type: object, additionalProperties: false, required: [zoneId, zoneName, recordId, recordName, recordType], properties: { zoneId: { type: string }, zoneName: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
+    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, unifiCompatibilityEnabled: { type: boolean } } } } }
     Error: { type: object, required: [success, message], properties: { success: { const: false }, message: { type: string } } }
   responses:
     Unauthorized: { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { success: false, message: Unauthorized } } } }

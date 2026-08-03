@@ -49,9 +49,12 @@ export class D1ClientRepository implements ClientRepository {
   async logs(id: string, limit: number, offset: number): Promise<UpdateLog[]> { const result = await this.db.prepare('SELECT * FROM update_logs WHERE client_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(id, limit, offset).all<Row>(); return result.results.map(mapLog); }
   async audit(email: string, action: string, targetId: string | null, result: string): Promise<void> { await this.db.prepare('INSERT INTO admin_audit_logs (id, admin_email, action, target_client_id, result, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), email, action, targetId, result, new Date().toISOString()).run(); }
   async dashboard(): Promise<Record<string, number>> {
-    const row = await this.db.prepare(`SELECT COUNT(*) total, SUM(enabled) enabled, SUM(CASE WHEN enabled=0 THEN 1 ELSE 0 END) disabled,
-      SUM(CASE WHEN last_status IN ('updated','unchanged') THEN 1 ELSE 0 END) recentSuccess,
-      SUM(CASE WHEN last_status='failed' THEN 1 ELSE 0 END) recentFailure FROM clients`).first<Row>();
+    const row = await this.db.prepare(`SELECT
+      (SELECT COUNT(*) FROM clients) total,
+      (SELECT COUNT(*) FROM clients WHERE enabled=1) enabled,
+      (SELECT COUNT(*) FROM clients WHERE enabled=0) disabled,
+      (SELECT COUNT(*) FROM update_logs WHERE unixepoch(created_at) >= unixepoch('now', '-24 hours') AND status IN ('updated','unchanged')) recentSuccess,
+      (SELECT COUNT(*) FROM update_logs WHERE unixepoch(created_at) >= unixepoch('now', '-24 hours') AND status='failed') recentFailure`).first<Row>();
     return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key, Number(value ?? 0)]));
   }
 }
