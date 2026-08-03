@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cloudflare-ddns-gateway-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-25",
+  "workers_dev": true,
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "single-page-application" },
+  "vars": { "ENVIRONMENT": "local", "DDNS_HOST": "ddns.localhost", "ADMIN_HOST": "localhost", "ALLOW_PRIVATE_IPS": "false", "ENABLE_UNIFI_COMPAT": "true", "DETAILED_ERRORS": "true" },
+  "d1_databases": [{ "binding": "DDNS_DB", "database_name": "cloudflare-ddns-local", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+  "env": {
+    "development": {
+      "name": "cloudflare-ddns-gateway-development",
+      "vars": { "ENVIRONMENT": "development", "DDNS_HOST": "ddns-dev.example.com", "ADMIN_HOST": "ddns-admin-dev.example.com", "ALLOW_PRIVATE_IPS": "false", "ENABLE_UNIFI_COMPAT": "true", "DETAILED_ERRORS": "true" },
+      "d1_databases": [{ "binding": "DDNS_DB", "database_name": "cloudflare-ddns-development", "database_id": "REPLACE_DEVELOPMENT_D1_ID", "migrations_dir": "migrations" }]
+    },
+    "staging": {
+      "name": "cloudflare-ddns-gateway-staging",
+      "workers_dev": false,
+      "routes": [{ "pattern": "ddns-staging.example.com", "custom_domain": true }, { "pattern": "ddns-admin-staging.example.com", "custom_domain": true }],
+      "vars": { "ENVIRONMENT": "staging", "DDNS_HOST": "ddns-staging.example.com", "ADMIN_HOST": "ddns-admin-staging.example.com", "ALLOW_PRIVATE_IPS": "false", "ENABLE_UNIFI_COMPAT": "true", "DETAILED_ERRORS": "false" },
+      "d1_databases": [{ "binding": "DDNS_DB", "database_name": "cloudflare-ddns-staging", "database_id": "REPLACE_STAGING_D1_ID", "migrations_dir": "migrations" }],
+      "ratelimits": [{ "name": "DDNS_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }, { "name": "ADMIN_RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }]
+    },
+    "production": {
+      "name": "cloudflare-ddns-gateway-production",
+      "workers_dev": false,
+      "routes": [{ "pattern": "ddns.example.com", "custom_domain": true }, { "pattern": "ddns-admin.example.com", "custom_domain": true }],
+      "vars": { "ENVIRONMENT": "production", "DDNS_HOST": "ddns.example.com", "ADMIN_HOST": "ddns-admin.example.com", "ALLOW_PRIVATE_IPS": "false", "ENABLE_UNIFI_COMPAT": "true", "DETAILED_ERRORS": "false" },
+      "d1_databases": [{ "binding": "DDNS_DB", "database_name": "cloudflare-ddns-production", "database_id": "REPLACE_PRODUCTION_D1_ID", "migrations_dir": "migrations" }],
+      "ratelimits": [{ "name": "DDNS_RATE_LIMITER", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } }, { "name": "ADMIN_RATE_LIMITER", "namespace_id": "2002", "simple": { "limit": 60, "period": 60 } }]
+    }
+  }
+}

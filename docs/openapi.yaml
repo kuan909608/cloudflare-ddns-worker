@@ -1,0 +1,73 @@
+openapi: 3.1.0
+info:
+  title: Cloudflare DDNS Gateway API
+  version: 1.0.0
+  license: { name: MIT }
+servers:
+  - { url: 'https://ddns.example.com', description: DDNS update }
+  - { url: 'https://ddns-admin.example.com', description: Access-protected administration }
+tags:
+  - { name: DDNS }
+  - { name: Admin, description: Requires Cloudflare Access and an allowed administrator email. }
+paths:
+  /api/ddns/{clientSlug}:
+    post:
+      tags: [DDNS]
+      operationId: updateDdns
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: clientSlug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }]
+      responses:
+        '200': { description: Updated or unchanged, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Client disabled }
+        '429': { description: Rate limited }
+        '502': { description: DNS update failed }
+  /api/compat/unifi/{clientSlug}:
+    get:
+      tags: [DDNS]
+      summary: Optional UniFi/Inadyn compatibility endpoint
+      description: Enabled by the shipped Wrangler configuration and independently switchable with ENABLE_UNIFI_COMPAT. Username must equal clientSlug; password is the one-time Client Token. Hostname query values are ignored.
+      security: [{ basicAuth: [] }]
+      parameters: [{ name: clientSlug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }]
+      responses:
+        '200': { description: Inadyn-compatible result, content: { text/plain: { schema: { type: string }, examples: { updated: { value: 'good 203.0.113.10' }, unchanged: { value: 'nochg 203.0.113.10' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Client disabled }
+        '404': { description: Compatibility mode disabled }
+        '429': { description: Rate limited }
+        '502': { description: DNS update failed }
+  /api/admin/dashboard:
+    get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Dashboard counters }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /api/admin/clients:
+    get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Client list }, '403': { $ref: '#/components/responses/Forbidden' } } }
+    post:
+      tags: [Admin]
+      security: [{ accessJwt: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }
+      responses: { '201': { description: Client and one-time token }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { description: Duplicate binding } }
+  /api/admin/clients/{id}:
+    parameters: [{ $ref: '#/components/parameters/ClientId' }]
+    get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Client detail }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { description: Not found } } }
+    put: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }, responses: { '200': { description: Updated }, '403': { $ref: '#/components/responses/Forbidden' } } }
+    delete: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Deleted }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /api/admin/clients/{id}/{action}:
+    parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: action, in: path, required: true, schema: { enum: [enable, disable, rotate-token] } }]
+    post: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Action completed; rotate-token includes one-time token }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /api/admin/clients/{id}/logs:
+    get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ $ref: '#/components/parameters/ClientId' }], responses: { '200': { description: Update logs }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /api/admin/cloudflare/validate-record:
+    post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }, responses: { '200': { description: Validated DNS record }, '403': { $ref: '#/components/responses/Forbidden' } } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: 'ddns_<random>' }
+    basicAuth: { type: http, scheme: basic, description: 'UniFi only: username=client slug, password=Client Token. Never use a Cloudflare API token.' }
+    accessJwt: { type: apiKey, in: header, name: Cf-Access-Jwt-Assertion, description: Injected by Cloudflare Access; never log or persist. }
+  parameters:
+    ClientId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  schemas:
+    UpdateResult: { type: object, required: [success, updated], properties: { success: { const: true }, updated: { type: boolean } } }
+    ClientInput: { type: object, additionalProperties: false, required: [displayName, slug, zoneId, zoneName, recordId, recordName, recordType], properties: { displayName: { type: string }, slug: { type: string }, zoneId: { type: string }, zoneName: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
+    Error: { type: object, required: [success, message], properties: { success: { const: false }, message: { type: string } } }
+  responses:
+    Unauthorized: { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { success: false, message: Unauthorized } } } }
+    Forbidden: { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { success: false, message: Forbidden } } } }
