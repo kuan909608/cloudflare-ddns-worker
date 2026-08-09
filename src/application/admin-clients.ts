@@ -42,7 +42,8 @@ export class AdminClientsUseCase {
   }
 
   private async existingRecord(recordId: string): Promise<DnsRecord> {
-    const record = await this.dns.getRecord(this.zone.id, recordId);
+    const zone = await this.dns.getZone(this.zone.id);
+    const record = await this.dns.getRecord(zone.id, zone.name, recordId);
     if (record.id !== recordId || record.zoneId !== this.zone.id) {
       throw errors.badRequest('Cloudflare record does not match fixed DNS Zone');
     }
@@ -54,7 +55,7 @@ export class AdminClientsUseCase {
     return Promise.all(clients.map(async (client) => {
       if (!client.recordId) return publicClient(client, null);
       try {
-        const record = await this.dns.getRecord(client.zoneId, client.recordId);
+        const record = await this.dns.getRecord(client.zoneId, client.zoneName, client.recordId);
         return publicClient(client, this.matches(record, client) ? record.content : null);
       } catch {
         return publicClient(client, null);
@@ -66,7 +67,7 @@ export class AdminClientsUseCase {
     const client = await this.repository.findById(id);
     if (!client) throw errors.notFound();
     if (!client.recordId) return publicClient(client, null);
-    const record = await this.dns.getRecord(client.zoneId, client.recordId);
+    const record = await this.dns.getRecord(client.zoneId, client.zoneName, client.recordId);
     if (!this.matches(record, client)) throw errors.dnsFailure();
     return publicClient(client, record.content);
   }

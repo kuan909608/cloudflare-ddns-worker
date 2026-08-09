@@ -18,8 +18,8 @@ export interface DnsZone {
 
 export interface DnsRecordGateway {
   getZone(zoneId: string): Promise<DnsZone>;
-  getRecord(zoneId: string, recordId: string): Promise<DnsRecord>;
-  findRecords(zoneId: string, name: string, type: RecordType): Promise<DnsRecord[]>;
-  create(zoneId: string, name: string, type: RecordType, content: string): Promise<DnsRecord>;
+  getRecord(zoneId: string, zoneName: string, recordId: string): Promise<DnsRecord>;
+  findRecords(zoneId: string, zoneName: string, name: string, type: RecordType): Promise<DnsRecord[]>;
+  create(zoneId: string, zoneName: string, name: string, type: RecordType, content: string): Promise<DnsRecord>;
   update(record: DnsRecord, content: string): Promise<void>;
 }

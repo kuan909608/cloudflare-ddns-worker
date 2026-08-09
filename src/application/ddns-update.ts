@@ -5,6 +5,14 @@ import { sourceIp } from '../services/ip-service';
 import { verifyToken } from '../services/token-service';
 import { bearerToken } from '../utils/http';
 
+type DdnsFailureStage = 'record_claim' | 'record_lookup' | 'record_create' | 'record_validate' | 'record_bind' | 'record_get' | 'record_update';
+
+function failureCategory(stage: DdnsFailureStage): string {
+  if (stage === 'record_claim' || stage === 'record_bind') return 'D1_ERROR';
+  if (stage === 'record_validate') return 'DNS_RESPONSE_INVALID';
+  return 'DNS_PROVIDER_ERROR';
+}
+
 export class DdnsUpdateUseCase {
   constructor(
     private readonly clients: ClientRepository,
@@ -30,12 +38,14 @@ export class DdnsUpdateUseCase {
     const now = new Date().toISOString();
     let oldIp: string | null = null;
     let updated = false;
+    let failureStage: DdnsFailureStage = 'record_get';
     try {
       let activeClient = client;
       let provisioned = false;
       let created = false;
       let record;
       if (!activeClient.recordId) {
+        failureStage = 'record_claim';
         const claimId = crypto.randomUUID();
         const staleBefore = new Date(Date.now() - 60_000).toISOString();
         const claimed = await this.clients.claimRecordProvisioning(activeClient.id, claimId, now, staleBefore);
@@ -45,14 +55,18 @@ export class DdnsUpdateUseCase {
           activeClient = refreshed;
         } else {
           try {
-            const matches = await this.dns.findRecords(activeClient.zoneId, activeClient.recordName, activeClient.recordType);
+            failureStage = 'record_lookup';
+            const matches = await this.dns.findRecords(activeClient.zoneId, activeClient.zoneName, activeClient.recordName, activeClient.recordType);
             if (matches.length > 1) throw errors.dnsFailure();
             record = matches[0];
             if (!record) {
-              record = await this.dns.create(activeClient.zoneId, activeClient.recordName, activeClient.recordType, ip);
+              failureStage = 'record_create';
+              record = await this.dns.create(activeClient.zoneId, activeClient.zoneName, activeClient.recordName, activeClient.recordType, ip);
               created = true;
             }
+            failureStage = 'record_validate';
             if (record.zoneId !== activeClient.zoneId || record.zoneName !== activeClient.zoneName || record.name !== activeClient.recordName || record.type !== activeClient.recordType) throw errors.dnsFailure();
+            failureStage = 'record_bind';
             const bound = await this.clients.bindProvisionedRecord(activeClient.id, claimId, { id:record.id, zoneName:record.zoneName, name:record.name, type:record.type });
             if (!bound) throw errors.dnsFailure();
             activeClient = bound;
@@ -63,12 +77,18 @@ export class DdnsUpdateUseCase {
           }
         }
       }
-      record ??= await this.dns.getRecord(activeClient.zoneId, activeClient.recordId!);
+      failureStage = 'record_get';
+      record ??= await this.dns.getRecord(activeClient.zoneId, activeClient.zoneName, activeClient.recordId!);
+      failureStage = 'record_validate';
       if (record.id !== activeClient.recordId || record.zoneId !== activeClient.zoneId || record.name !== activeClient.recordName || record.type !== activeClient.recordType) throw errors.dnsFailure();
       oldIp = created ? null : record.content;
       updated = provisioned || oldIp !== ip;
-      if (!created && oldIp !== ip) await this.dns.update(record, ip);
+      if (!created && oldIp !== ip) {
+        failureStage = 'record_update';
+        await this.dns.update(record, ip);
+      }
     } catch {
+      console.error({ event:'ddns_update_failed', stage:failureStage, category:failureCategory(failureStage) });
       await Promise.allSettled([
         this.clients.updateStatus(client.id, { ip: client.lastIp ?? ip, sourceIp: ip, status: 'failed', updatedAt: now }),
         this.clients.addLog({ id: crypto.randomUUID(), clientId: client.id, sourceIp: ip, oldIp, newIp: ip, updated: false, status: 'failed', errorCode: 'DNS_UPDATE_FAILED', createdAt: now }),
