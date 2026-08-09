@@ -98,11 +98,12 @@ describe('admin HTTP API', () => {
     }
   });
 
-  it('serves the protected SPA fallback only for extensionless admin paths', async () => {
-    const assets = { fetch:vi.fn(async (input:Request) => new Response(new URL(input.url).pathname === '/admin/index.html' ? 'spa' : 'missing', { status:new URL(input.url).pathname === '/admin/index.html' ? 200 : 404 })) };
+  it('delegates protected SPA navigation and asset misses to the configured assets binding', async () => {
+    const assets = { fetch:vi.fn(async (input:Request) => new Response(new URL(input.url).pathname === '/admin/clients' ? 'spa' : 'missing', { status:new URL(input.url).pathname === '/admin/clients' ? 200 : 404 })) };
     const fallbackEnv = { ...env, ASSETS:assets } as unknown as Env;
     expect(await (await route(request('/admin/clients'), fallbackEnv)).text()).toBe('spa');
     expect((await route(request('/admin/missing.js'), fallbackEnv)).status).toBe(404);
+    expect(assets.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('returns runtime config, dashboard, list, live detail and logs', async () => {

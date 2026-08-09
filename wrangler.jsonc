@@ -21,6 +21,11 @@
       "persist": true
     }
   },
-  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
   "d1_databases": [{ "binding": "DDNS_DB", "migrations_dir": "migrations" }]
 }

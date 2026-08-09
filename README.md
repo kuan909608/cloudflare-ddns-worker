@@ -279,7 +279,7 @@ npx wrangler tail cloudflare-ddns-gateway --format pretty
 - `400 No valid public source IP`：record family 不符、CGNAT/private/link-local，或不是經 Cloudflare custom domain 呼叫。`ALLOW_PRIVATE_IPS` 預設 false；開啟時只額外允許 RFC1918/IPv6 ULA，loopback、unspecified、link-local、multicast 等仍永久拒絕，不建議 production 開啟。
 - `409`：slug、record ID 或 record name 已綁定。
 - `502`：DNS token scope、zone/record 綁定或 Cloudflare API 問題；Client response 刻意不含上游細節。
-- Vue 404/Access bypass：確認 assets `run_worker_first:true`、Vite base 為 `/admin/`、Access application path 是 `ddns.example.com/admin/*`，且沒有 Bypass policy。
+- Vue 404/Access bypass：確認 assets 已啟用 `run_worker_first:true` 與 `not_found_handling:single-page-application`、建置產物引用 `/admin/assets/*`、Access application path 是 `ddns.example.com/admin/*`，且沒有 Bypass policy。
 
 Worker log 禁止輸出 Authorization、JWT、cookie、token/hash、secret 或 Cloudflare 原始錯誤。Production 不得啟用 `DETAILED_ERRORS`。建議設定 update/admin audit retention、Cloudflare WAF 與異常 401/429/502 告警。
 

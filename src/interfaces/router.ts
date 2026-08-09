@@ -56,10 +56,7 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   const identity = await verifyAccess(request, env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD);
   if (!url.pathname.startsWith('/admin/api/')) {
     if (!['GET', 'HEAD'].includes(request.method)) throw errors.notFound();
-    const assetResponse = await env.ASSETS.fetch(request);
-    if (assetResponse.status !== 404 || url.pathname.split('/').at(-1)?.includes('.')) return assetResponse;
-    const fallbackUrl = new URL(request.url); fallbackUrl.pathname = '/admin/index.html';
-    return env.ASSETS.fetch(new Request(fallbackUrl, request));
+    return env.ASSETS.fetch(request);
   }
   await enforceRateLimit(env.DDNS_DB, `admin:${identity.email}`, 60);
   if (['POST', 'PUT', 'DELETE'].includes(request.method)) enforceSameOrigin(request, url.hostname);

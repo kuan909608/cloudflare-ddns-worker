@@ -6,7 +6,7 @@ import { build } from 'vite';
 describe('frontend production build', () => {
   it('emits every referenced admin asset at its public URL path', async () => {
     await build({ configFile:resolve('frontend/vite.config.ts'), logLevel:'silent' });
-    const html = await readFile(resolve('dist/admin/index.html'), 'utf8');
+    const html = await readFile(resolve('dist/index.html'), 'utf8');
     const assetUrls = [...html.matchAll(/(?:src|href)="(\/admin\/[^"]+)"/gu)].map((match) => match[1]!);
 
     expect(assetUrls.length).toBeGreaterThan(0);

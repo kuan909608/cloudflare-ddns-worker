@@ -70,7 +70,10 @@ onMounted(async () => {
       await loadRecords(form.zoneId, false);
     }
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '無法載入 Cloudflare Zones，請確認 API Token 具備 Zone Read 權限。';
+    const message = cause instanceof Error ? cause.message : '';
+    error.value = message && !['Internal server error', 'DNS update failed'].includes(message)
+      ? message
+      : '無法載入 Cloudflare Zones，請確認 API Token 具備 Zone / Zone / Read 權限。';
   } finally {
     initializing.value = false;
   }
