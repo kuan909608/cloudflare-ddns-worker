@@ -7,7 +7,6 @@ interface ApiEnvelope<T> {
   result_info?: { page?: number; total_pages?: number };
 }
 
-export interface CloudflareZoneOption { id: string; name: string; }
 export interface CloudflareRecordOption { id: string; name: string; type: 'A' | 'AAAA'; content: string; }
 
 export class CloudflareDnsService implements DnsRecordGateway {
@@ -31,10 +30,6 @@ export class CloudflareDnsService implements DnsRecordGateway {
       if (page >= (response.result_info?.total_pages ?? 1)) return values;
     }
     throw errors.dnsFailure();
-  }
-  async listZones(): Promise<CloudflareZoneOption[]> {
-    const zones = await this.listAll<{ id: string; name: string }>('/zones?status=active&order=name&direction=asc', 50);
-    return zones.map(({ id, name }) => ({ id, name }));
   }
   async listRecords(zoneId: string): Promise<CloudflareRecordOption[]> {
     const records = await this.listAll<{ id: string; name: string; type: string; content: string }>(`/zones/${encodeURIComponent(zoneId)}/dns_records?order=name&direction=asc`, 1000);

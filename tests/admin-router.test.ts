@@ -10,14 +10,14 @@ const mocks = vi.hoisted(() => ({
     list:vi.fn(), findById:vi.fn(), findBySlug:vi.fn(), create:vi.fn(), update:vi.fn(), setEnabled:vi.fn(),
     rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
   },
-  getRecord: vi.fn(), listZones:vi.fn(), listRecords:vi.fn(),
+  getRecord: vi.fn(), listRecords:vi.fn(),
   updateRecord: vi.fn(),
 }));
 
 vi.mock('../src/services/access-service', () => ({ verifyAccess:mocks.verifyAccess }));
 vi.mock('../src/middleware/rate-limit', () => ({ enforceRateLimit:mocks.enforceRateLimit }));
 vi.mock('../src/infrastructure/d1-client-repository', () => ({ D1ClientRepository:class { constructor() { return mocks.repository; } } }));
-vi.mock('../src/services/cloudflare-dns-service', () => ({ CloudflareDnsService:class { getRecord=mocks.getRecord; listZones=mocks.listZones; listRecords=mocks.listRecords; update=mocks.updateRecord; } }));
+vi.mock('../src/services/cloudflare-dns-service', () => ({ CloudflareDnsService:class { getRecord=mocks.getRecord; listRecords=mocks.listRecords; update=mocks.updateRecord; } }));
 
 import { route } from '../src/interfaces/router';
 
@@ -29,7 +29,7 @@ const client: Client = {
 };
 const record = { id:client.recordId, zoneId:client.zoneId, zoneName:client.zoneName, name:client.recordName, type:'A' as const, content:'8.8.8.8', ttl:1 };
 const env = {
-  ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', ENABLE_UNIFI_COMPAT:'true',
+  ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', DNS_ZONE_ID:client.zoneId, DNS_ZONE_NAME:client.zoneName, ENABLE_UNIFI_COMPAT:'true',
   ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com', ACCESS_AUD:'aud',
   CLOUDFLARE_DNS_API_TOKEN:'secret', DDNS_DB:{} as D1Database,
   ASSETS:{ fetch:vi.fn(async () => new Response('asset')) },
@@ -57,7 +57,6 @@ beforeEach(() => {
   mocks.repository.create.mockResolvedValue(client);
   mocks.repository.audit.mockResolvedValue(undefined);
   mocks.getRecord.mockResolvedValue(record);
-  mocks.listZones.mockResolvedValue([{id:client.zoneId,name:client.zoneName}]);
   mocks.listRecords.mockResolvedValue([{id:client.recordId,name:client.recordName,type:client.recordType,content:record.content}]);
 });
 
@@ -107,7 +106,7 @@ describe('admin HTTP API', () => {
   });
 
   it('returns runtime config, dashboard, list, live detail and logs', async () => {
-    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net'}});
+    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net',dnsZoneName:'example.com'}});
     expect((await route(request('/admin/api/dashboard'), env)).status).toBe(200);
     expect((await route(request('/admin/api/clients'), env)).status).toBe(200);
     expect(await (await route(request(`/admin/api/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
@@ -115,15 +114,13 @@ describe('admin HTTP API', () => {
     expect(mocks.repository.logs).toHaveBeenCalledWith(id,25,0);
   });
 
-  it('lists Cloudflare zones and A/AAAA records for the guided client form', async () => {
-    expect(await (await route(request('/admin/api/cloudflare/zones'), env)).json()).toMatchObject({data:[{name:'example.com'}]});
-    const zoneId = 'a'.repeat(32);
-    expect(await (await route(request(`/admin/api/cloudflare/zones/${zoneId}/records`), env)).json()).toMatchObject({data:[{type:'A'}]});
-    expect(mocks.listRecords).toHaveBeenCalledWith(zoneId);
+  it('lists A/AAAA records only from the Worker fixed DNS Zone', async () => {
+    expect(await (await route(request('/admin/api/cloudflare/records'), env)).json()).toMatchObject({data:[{type:'A'}]});
+    expect(mocks.listRecords).toHaveBeenCalledWith(client.zoneId);
   });
 
   it('creates, updates, deletes, enables, disables and rotates with JSON mutation policy', async () => {
-    const input = {displayName:'Home',slug:'home-1',zoneId:client.zoneId,zoneName:client.zoneName,recordId:client.recordId,recordName:client.recordName,recordType:'A'};
+    const input = {displayName:'Home',slug:'home-1',recordId:client.recordId,recordName:client.recordName,recordType:'A'};
     expect((await route(request('/admin/api/clients','POST',input),env)).status).toBe(201);
     expect((await route(request(`/admin/api/clients/${id}`,'PUT',input),env)).status).toBe(200);
     expect((await route(request(`/admin/api/clients/${id}`,'DELETE',{}),env)).status).toBe(200);
@@ -133,12 +130,22 @@ describe('admin HTTP API', () => {
     expect(mocks.repository.audit).toHaveBeenCalledWith('admin@example.com','client.rotate-token',id,'success');
   });
 
-  it('validates records and rejects invalid pagination, media type, origin and routes', async () => {
-    const recordInput = {zoneId:client.zoneId,zoneName:client.zoneName,recordId:client.recordId,recordName:client.recordName,recordType:'A'};
-    expect((await route(request('/admin/api/cloudflare/validate-record','POST',recordInput),env)).status).toBe(200);
+  it('rejects browser-controlled Zone fields on Client mutations', async () => {
+    const input = {displayName:'Home',slug:'home-1',recordId:client.recordId,recordName:client.recordName,recordType:'A',zoneId:'a'.repeat(32)};
+    expect((await route(request('/admin/api/clients','POST',input),env)).status).toBe(400);
+  });
+
+  it('rejects invalid pagination, media type, origin and obsolete routes', async () => {
     expect((await route(request(`/admin/api/clients/${id}/logs?limit=NaN`),env)).status).toBe(400);
     expect((await route(request(`/admin/api/clients/${id}/enable`,'POST'),env)).status).toBe(415);
     expect((await route(request(`/admin/api/clients/${id}/enable`,'POST',{}, {Origin:'https://evil.example','Sec-Fetch-Site':'cross-site'}),env)).status).toBe(403);
     expect((await route(request('/admin/api/missing'),env)).status).toBe(404);
+    expect((await route(request('/admin/api/cloudflare/zones'),env)).status).toBe(404);
+  });
+
+  it('fails closed when the fixed DNS Zone is not configured', async () => {
+    const missingZoneEnv = { ...env, DNS_ZONE_ID:'', DNS_ZONE_NAME:'' } as unknown as Env;
+    expect(await (await route(request('/admin/api/config'),missingZoneEnv)).json()).toEqual({success:false,message:'DNS Zone is not configured'});
+    expect((await route(request('/admin/api/dashboard'),missingZoneEnv)).status).toBe(200);
   });
 });

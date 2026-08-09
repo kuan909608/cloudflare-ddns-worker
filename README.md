@@ -61,6 +61,8 @@ npm run db:migrate:local
 
 - `ENVIRONMENT=production`
 - `APP_HOST`：正式 hostname，例如 `ddns.example.com`
+- `DNS_ZONE_ID`：此 Worker 唯一可管理的 Cloudflare Zone ID（Zone Overview 右側可查）
+- `DNS_ZONE_NAME`：對應的 Zone 名稱，例如 `example.com`
 - `ALLOW_PRIVATE_IPS=false`
 - `ENABLE_UNIFI_COMPAT=true`（不需要 UniFi 時設為 `false`）
 - `DETAILED_ERRORS=false`
@@ -106,7 +108,6 @@ Zero Trust → Settings → Authentication 啟用 **Cloudflare** identity provid
 
 Cloudflare Dashboard → My Profile → API Tokens → Create Custom Token：
 
-- Permission：Zone / Zone / Read（管理頁列出可選 Zone）
 - Permission：Zone / DNS / Edit
 - Zone Resources：Include / Specific zone / 只選實際使用 zone
 - 視需求加 client IP filter 與期限
@@ -155,7 +156,7 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 5. Root directory：`/`。
 6. 不需要 preview 時關閉 non-production branch builds。
 
-Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；五個非敏感 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
+Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；七個非敏感 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
 
 ### 10. 後續部署與回復
 
@@ -165,7 +166,7 @@ Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secr
 
 ## Client 操作
 
-登入管理頁後新增 Client，依序選擇 Cloudflare Zone、A/AAAA type 與 DNS Record；管理頁會自動帶入 zone/record ID 與名稱，不需要手動複製內部 ID。API Token 必須同時具備 `Zone / Zone / Read` 與 `Zone / DNS / Edit`。後端會向 Cloudflare API 完整核對 record ID、zone ID、名稱與 type，且 D1 unique index 防止重複綁定。Client 清單與詳情的 `currentDnsIp` 來自 Cloudflare 即時查詢；`lastIp` 只代表最後一次 Gateway 更新。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
+每個 Worker 只管理 `DNS_ZONE_ID` 與 `DNS_ZONE_NAME` 指定的一個 Zone。登入管理頁新增 Client 時只需填寫顯示名稱、裝置代號並選擇 A/AAAA DNS Record；Zone 由後端固定注入，browser request 無法指定或切換。裝置代號會成為 `/api/ddns/{slug}` 的路徑，亦是 UniFi Basic Auth username。API Token 只需 `Zone / DNS / Edit`。後端會向 Cloudflare API 完整核對 record ID、固定 zone ID、名稱與 type，且 D1 unique index 防止重複綁定。Client 清單與詳情的 `currentDnsIp` 來自 Cloudflare 即時查詢；`lastIp` 只代表最後一次 Gateway 更新。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
 
 輪替 Token 會用單一 D1 update 立即取代 hash，舊 token 隨即失效。刪除、停用與輪替都有確認步驟。每個管理 mutation 會先持久化 `started` audit；起始 audit 失敗時操作 fail closed，完成後再寫入 success/failure，避免操作完全無法歸因。
 

@@ -63,16 +63,11 @@ paths:
     post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { $ref: '#/components/requestBodies/EmptyJson' }, responses: { '200': { description: Action completed; rotate-token includes one-time token }, '403': { $ref: '#/components/responses/Forbidden' }, '415': { description: JSON Content-Type required } } }
   /admin/api/clients/{id}/logs:
     get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }, { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }], responses: { '200': { description: Update logs }, '400': { description: Invalid pagination }, '403': { $ref: '#/components/responses/Forbidden' } } }
-  /admin/api/cloudflare/validate-record:
-    post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecordInput' } } } }, responses: { '200': { description: Validated DNS record }, '403': { $ref: '#/components/responses/Forbidden' } } }
-  /admin/api/cloudflare/zones:
-    get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Active zones available to the configured API token }, '403': { $ref: '#/components/responses/Forbidden' }, '502': { description: Cloudflare API request failed } } }
-  /admin/api/cloudflare/zones/{zoneId}/records:
+  /admin/api/cloudflare/records:
     get:
       tags: [Admin]
       security: [{ accessJwt: [] }]
-      parameters: [{ name: zoneId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-f]{32}$' } }]
-      responses: { '200': { description: A and AAAA records in the selected zone }, '403': { $ref: '#/components/responses/Forbidden' }, '502': { description: Cloudflare API request failed } }
+      responses: { '200': { description: A and AAAA records in the Worker fixed DNS Zone }, '403': { $ref: '#/components/responses/Forbidden' }, '500': { description: Fixed DNS Zone is not configured }, '502': { description: Cloudflare API request failed } }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: 'ddns_<random>' }
@@ -84,9 +79,8 @@ components:
     EmptyJson: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, maxProperties: 0 }, example: {} } } }
   schemas:
     UpdateResult: { type: object, required: [success, updated], properties: { success: { const: true }, updated: { type: boolean } } }
-    ClientInput: { type: object, additionalProperties: false, required: [displayName, slug, zoneId, zoneName, recordId, recordName, recordType], properties: { displayName: { type: string }, slug: { type: string }, zoneId: { type: string }, zoneName: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
-    RecordInput: { type: object, additionalProperties: false, required: [zoneId, zoneName, recordId, recordName, recordType], properties: { zoneId: { type: string }, zoneName: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
-    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, unifiCompatibilityEnabled: { type: boolean } } } } }
+    ClientInput: { type: object, additionalProperties: false, required: [displayName, slug, recordId, recordName, recordType], properties: { displayName: { type: string }, slug: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
+    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, dnsZoneName, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, dnsZoneName: { type: string }, unifiCompatibilityEnabled: { type: boolean } } } } }
     Error: { type: object, required: [success, message], properties: { success: { const: false }, message: { type: string } } }
   responses:
     Unauthorized: { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { success: false, message: Unauthorized } } } }

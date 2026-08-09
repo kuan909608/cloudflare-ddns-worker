@@ -4,44 +4,22 @@ import { useRouter } from 'vue-router';
 import TokenModal from '../components/TokenModal.vue';
 import { adminApi } from '../services/api';
 import { toClientInput } from '../services/client-input';
-import type { ClientInput, CloudflareRecordOption, CloudflareZoneOption } from '../types';
+import type { ClientInput, CloudflareRecordOption } from '../types';
 
 const props = defineProps<{ id?: string }>();
 const router = useRouter();
-const form = reactive<ClientInput>({ displayName:'', slug:'', zoneId:'', zoneName:'', recordId:'', recordName:'', recordType:'A' });
-const zones = ref<CloudflareZoneOption[]>([]);
+const form = reactive<ClientInput>({ displayName:'', slug:'', recordId:'', recordName:'', recordType:'A' });
 const records = ref<CloudflareRecordOption[]>([]);
 const error = ref('');
 const token = ref('');
 const ddnsOrigin = ref('');
+const dnsZoneName = ref('');
 const initializing = ref(true);
-const loadingRecords = ref(false);
 const saving = ref(false);
 
 const filteredRecords = computed(() => records.value.filter((record) => record.type === form.recordType));
 const selectedRecord = computed(() => records.value.find((record) => record.id === form.recordId));
 const endpointPreview = computed(() => form.slug ? `${ddnsOrigin.value || 'https://ddns.example.com'}/api/ddns/${form.slug}` : '儲存後產生專屬更新 URL');
-
-async function loadRecords(zoneId: string, reset = true) {
-  if (reset) {
-    form.recordId = '';
-    form.recordName = '';
-  }
-  records.value = [];
-  if (!zoneId) return;
-  loadingRecords.value = true;
-  try {
-    records.value = await adminApi.records(zoneId);
-  } finally {
-    loadingRecords.value = false;
-  }
-}
-
-async function onZoneChange() {
-  const zone = zones.value.find((item) => item.id === form.zoneId);
-  form.zoneName = zone?.name ?? '';
-  await loadRecords(form.zoneId);
-}
 
 function selectRecordType(type: 'A' | 'AAAA') {
   if (form.recordType === type) return;
@@ -58,22 +36,22 @@ function onRecordChange() {
 
 onMounted(async () => {
   try {
-    const [config, availableZones, existing] = await Promise.all([
+    const [config, availableRecords, existing] = await Promise.all([
       adminApi.config(),
-      adminApi.zones(),
+      adminApi.records(),
       props.id ? adminApi.client(props.id) : Promise.resolve(undefined),
     ]);
     ddnsOrigin.value = config.ddnsOrigin;
-    zones.value = availableZones;
+    dnsZoneName.value = config.dnsZoneName;
+    records.value = availableRecords;
     if (existing) {
       Object.assign(form, toClientInput(existing));
-      await loadRecords(form.zoneId, false);
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : '';
     error.value = message && !['Internal server error', 'DNS update failed'].includes(message)
       ? message
-      : '無法載入 Cloudflare Zones，請確認 API Token 具備 Zone / Zone / Read 權限。';
+      : '無法載入固定 DNS Zone，請確認 Worker 已設定 DNS_ZONE_ID、DNS_ZONE_NAME，且 API Token 具備 DNS Edit 權限。';
   } finally {
     initializing.value = false;
   }
@@ -119,7 +97,7 @@ function close() {
         <div class="surface-body">
           <div class="section-heading">
             <span class="step-number">1</span>
-            <div><h2 class="section-title">基本資訊</h2><p class="section-description">用容易辨識的名稱管理設備，Slug 會成為專屬更新 URL。</p></div>
+            <div><h2 class="section-title">基本資訊</h2><p class="section-description">用容易辨識的名稱管理設備，裝置代號會成為專屬更新 URL。</p></div>
           </div>
           <div class="form-grid">
             <label class="field">
@@ -128,9 +106,9 @@ function close() {
               <span class="field-help">只顯示在管理頁，不會送到遠端設備。</span>
             </label>
             <label class="field">
-              <span class="label">Client Slug</span>
+              <span class="label">裝置代號</span>
               <input v-model.trim="form.slug" class="input" required maxlength="63" pattern="[a-z0-9][a-z0-9-]{1,62}" autocomplete="off" placeholder="例如：home-unifi">
-              <span class="field-help">僅限小寫英數與連字號，建立後仍可編輯。</span>
+              <span class="field-help">更新網址與 UniFi 帳號使用的短代號；僅限小寫英數與連字號。</span>
             </label>
             <div class="field field--full">
               <span class="label">更新端點預覽</span>
@@ -144,17 +122,13 @@ function close() {
         <div class="surface-body">
           <div class="section-heading">
             <span class="step-number">2</span>
-            <div><h2 class="section-title">Cloudflare DNS 綁定</h2><p class="section-description">從 API Token 可存取的 Zone 與 Record 中選擇，不需要手動複製任何 ID。</p></div>
+            <div><h2 class="section-title">Cloudflare DNS 綁定</h2><p class="section-description">Worker 只能管理部署時固定的 Zone；每個 Client 只選擇其中一筆 Record。</p></div>
           </div>
           <div class="form-grid">
-            <label class="field field--full">
-              <span class="label">Zone</span>
-              <select v-model="form.zoneId" class="input" required :disabled="initializing" @change="onZoneChange">
-                <option value="" disabled>{{ initializing ? '正在讀取 Cloudflare Zones…' : '選擇 Zone' }}</option>
-                <option v-for="zone in zones" :key="zone.id" :value="zone.id">{{ zone.name }}</option>
-              </select>
-              <span class="field-help">只會列出 API Token 有權讀取的 active zones。</span>
-            </label>
+            <div class="field field--full">
+              <span class="label">固定 Zone</span>
+              <div class="selection-summary"><div><strong>{{ dnsZoneName || '正在讀取設定…' }}</strong><span>由 Worker runtime variables 管理，Client 無法變更</span></div><span class="type-chip">LOCKED</span></div>
+            </div>
 
             <div class="field">
               <span class="label">Record Type</span>
@@ -166,8 +140,8 @@ function close() {
 
             <label class="field">
               <span class="label">DNS Record</span>
-              <select v-model="form.recordId" class="input" required :disabled="!form.zoneId || loadingRecords" @change="onRecordChange">
-                <option value="" disabled>{{ loadingRecords ? '正在讀取 Records…' : form.zoneId ? `選擇 ${form.recordType} Record` : '請先選擇 Zone' }}</option>
+              <select v-model="form.recordId" class="input" required :disabled="initializing" @change="onRecordChange">
+                <option value="" disabled>{{ initializing ? '正在讀取 Records…' : `選擇 ${form.recordType} Record` }}</option>
                 <option v-for="record in filteredRecords" :key="record.id" :value="record.id">{{ record.name }} · {{ record.content }}</option>
               </select>
               <span class="field-help">系統會在儲存前再次核對 Record ID、名稱與類型。</span>
@@ -184,7 +158,7 @@ function close() {
       <p v-if="error" class="notice" role="alert">{{ error }}</p>
       <div class="form-actions">
         <RouterLink class="btn-secondary" to="/clients">取消</RouterLink>
-        <button class="btn-primary" :disabled="initializing || loadingRecords || saving || !form.recordId">
+        <button class="btn-primary" :disabled="initializing || saving || !form.recordId">
           {{ saving ? '正在驗證並儲存…' : props.id ? '儲存變更' : '建立並產生 Token' }}
         </button>
       </div>

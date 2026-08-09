@@ -13,7 +13,7 @@ describe('client edit payload', () => {
     };
 
     expect(toClientInput(client)).toEqual({
-      displayName: 'Home', slug: 'home-1', zoneId: '1'.repeat(32), zoneName: 'example.com',
+      displayName: 'Home', slug: 'home-1',
       recordId: '2'.repeat(32), recordName: 'home.example.com', recordType: 'A',
     });
   });

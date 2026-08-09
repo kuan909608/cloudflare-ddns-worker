@@ -8,17 +8,16 @@ import { generateToken } from '../services/token-service';
 export const clientInputSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
   slug: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{1,62}$/u),
-  zoneId: z.string().trim().min(16).max(64),
-  zoneName: z.string().trim().min(3).max(253),
   recordId: z.string().trim().min(16).max(64),
   recordName: z.string().trim().min(3).max(253),
   recordType: z.enum(['A', 'AAAA']),
 }).strict();
 
-const recordInputSchema = clientInputSchema.pick({ zoneId: true, zoneName: true, recordId: true, recordName: true, recordType: true });
+const recordInputSchema = clientInputSchema.pick({ recordId: true, recordName: true, recordType: true });
 
 export type ClientInput = z.infer<typeof clientInputSchema>;
-const recordFields = (input: ClientInput) => ({ zoneId: input.zoneId, zoneName: input.zoneName, recordId: input.recordId, recordName: input.recordName, recordType: input.recordType });
+export interface FixedDnsZone { id: string; name: string; }
+const recordFields = (input: ClientInput) => ({ recordId: input.recordId, recordName: input.recordName, recordType: input.recordType });
 const isUniqueConflict = (error: unknown): boolean => error instanceof Error && /unique constraint/iu.test(error.message);
 export function publicClient(client: Client, currentDnsIp: string | null = client.lastIp): PublicClient {
   const { tokenHash: _, ...safe } = client;
@@ -26,7 +25,7 @@ export function publicClient(client: Client, currentDnsIp: string | null = clien
 }
 
 export class AdminClientsUseCase {
-  constructor(private readonly repository: ClientRepository, private readonly dns: DnsRecordGateway) {}
+  constructor(private readonly repository: ClientRepository, private readonly dns: DnsRecordGateway, private readonly zone: FixedDnsZone) {}
   async list(): Promise<PublicClient[]> {
     const clients = await this.repository.list();
     return Promise.all(clients.map(async (client) => {
@@ -49,8 +48,8 @@ export class AdminClientsUseCase {
   async validate(raw: unknown) {
     const parsed = recordInputSchema.safeParse(raw); if (!parsed.success) throw errors.badRequest('Invalid record fields');
     const input = parsed.data;
-    const record = await this.dns.getRecord(input.zoneId, input.recordId);
-    if (record.id !== input.recordId || record.zoneId !== input.zoneId || record.zoneName !== input.zoneName || record.name !== input.recordName || record.type !== input.recordType) throw errors.badRequest('Cloudflare record does not match');
+    const record = await this.dns.getRecord(this.zone.id, input.recordId);
+    if (record.id !== input.recordId || record.zoneId !== this.zone.id || record.zoneName !== this.zone.name || record.name !== input.recordName || record.type !== input.recordType) throw errors.badRequest('Cloudflare record does not match fixed DNS Zone');
     return record;
   }
   async create(raw: unknown): Promise<{ client: PublicClient; token: string }> {
@@ -58,7 +57,7 @@ export class AdminClientsUseCase {
     const record = await this.validate(recordFields(parsed.data));
     const credentials = await generateToken(); const now = new Date().toISOString();
     try {
-      const client = await this.repository.create({ id: crypto.randomUUID(), ...parsed.data, enabled: true, tokenHash: credentials.hash, now });
+      const client = await this.repository.create({ id: crypto.randomUUID(), ...parsed.data, zoneId: this.zone.id, zoneName: this.zone.name, enabled: true, tokenHash: credentials.hash, now });
       return { client: publicClient(client, record.content), token: credentials.token };
     } catch (error) { if (isUniqueConflict(error)) throw errors.conflict('Slug or DNS record already exists'); throw error; }
   }
@@ -66,7 +65,7 @@ export class AdminClientsUseCase {
     const parsed = clientInputSchema.safeParse(raw); if (!parsed.success) throw errors.badRequest('Invalid client fields');
     if (!(await this.repository.findById(id))) throw errors.notFound();
     const record = await this.validate(recordFields(parsed.data));
-    try { return publicClient((await this.repository.update(id, parsed.data))!, record.content); } catch (error) { if (isUniqueConflict(error)) throw errors.conflict('Slug or DNS record already exists'); throw error; }
+    try { return publicClient((await this.repository.update(id, { ...parsed.data, zoneId: this.zone.id, zoneName: this.zone.name }))!, record.content); } catch (error) { if (isUniqueConflict(error)) throw errors.conflict('Slug or DNS record already exists'); throw error; }
   }
   async rotate(id: string): Promise<{ client: PublicClient; token: string }> {
     const current = await this.get(id);

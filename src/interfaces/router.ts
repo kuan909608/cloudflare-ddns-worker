@@ -14,6 +14,14 @@ import { securityHeaders } from '../utils/security';
 
 const idPattern = '[0-9a-fA-F-]{36}';
 const isAdminPath = (pathname: string): boolean => pathname === '/admin' || pathname.startsWith('/admin/');
+const configuredDnsZone = (env: Env) => ({
+  id: env.DNS_ZONE_ID?.trim().toLowerCase() ?? '',
+  name: env.DNS_ZONE_NAME?.trim().toLowerCase() ?? '',
+});
+const requireFixedDnsZone = (zone: { id: string; name: string }) => {
+  if (!/^[0-9a-f]{32}$/u.test(zone.id) || !/^(?=.{3,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])$/u.test(zone.name)) throw errors.dnsZoneNotConfigured();
+  return zone;
+};
 
 async function ddns(request: Request, env: Env, url: URL): Promise<Response> {
   const compatMatch = url.pathname.match(/^\/api\/ddns\/([a-z0-9][a-z0-9-]{1,62})\/unifi$/u);
@@ -60,27 +68,24 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   }
   await enforceRateLimit(env.DDNS_DB, `admin:${identity.email}`, 60);
   if (['POST', 'PUT', 'DELETE'].includes(request.method)) enforceSameOrigin(request, url.hostname);
-  const repository = new D1ClientRepository(env.DDNS_DB); const dns = new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN); const useCase = new AdminClientsUseCase(repository, dns);
+  const repository = new D1ClientRepository(env.DDNS_DB); const dns = new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN); const zone = configuredDnsZone(env); const useCase = new AdminClientsUseCase(repository, dns, zone);
   const listPath = url.pathname === '/admin/api/clients';
   const clientMatch = url.pathname.match(new RegExp(`^/admin/api/clients/(${idPattern})$`, 'u'));
   const actionMatch = url.pathname.match(new RegExp(`^/admin/api/clients/(${idPattern})/(enable|disable|rotate-token|logs)$`, 'u'));
-  const zoneRecordsMatch = url.pathname.match(/^\/admin\/api\/cloudflare\/zones\/([0-9a-f]{32})\/records$/u);
   let response: Response;
-  if (url.pathname === '/admin/api/config' && request.method === 'GET') response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.APP_HOST}`, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' });
+  if (url.pathname === '/admin/api/config' && request.method === 'GET') response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.APP_HOST}`, dnsZoneName:requireFixedDnsZone(zone).name, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' });
   else if (url.pathname === '/admin/api/dashboard' && request.method === 'GET') response = success(await repository.dashboard());
   else if (listPath && request.method === 'GET') response = success(await useCase.list());
-  else if (listPath && request.method === 'POST') { const result = await runAudited(repository, identity.email, 'client.create', async () => useCase.create(await strictJson(request)), (value) => value.client.id); response = success(result, 201); }
+  else if (listPath && request.method === 'POST') { requireFixedDnsZone(zone); const result = await runAudited(repository, identity.email, 'client.create', async () => useCase.create(await strictJson(request)), (value) => value.client.id); response = success(result, 201); }
   else if (clientMatch && request.method === 'GET') response = success(await useCase.get(clientMatch[1]!));
-  else if (clientMatch && request.method === 'PUT') { const id = clientMatch[1]!; const result = await runAudited(repository, identity.email, 'client.update', async () => useCase.update(id, await strictJson(request)), () => id, id); response = success(result); }
+  else if (clientMatch && request.method === 'PUT') { requireFixedDnsZone(zone); const id = clientMatch[1]!; const result = await runAudited(repository, identity.email, 'client.update', async () => useCase.update(id, await strictJson(request)), () => id, id); response = success(result); }
   else if (clientMatch && request.method === 'DELETE') { const id = clientMatch[1]!; const result = await runAudited(repository, identity.email, 'client.delete', async () => { await strictEmptyJson(request); if (!(await repository.remove(id))) throw errors.notFound(); return { deleted: true }; }, () => id, id); response = success(result); }
   else if (actionMatch && actionMatch[2] === 'logs' && request.method === 'GET') { const limit = boundedInteger(url.searchParams.get('limit'), 50, 1, 100); const offset = boundedInteger(url.searchParams.get('offset'), 0, 0, 1_000_000); response = success(await repository.logs(actionMatch[1]!, limit, offset)); }
   else if (actionMatch && request.method === 'POST') {
     const [id, action] = [actionMatch[1]!, actionMatch[2]!];
     if (action === 'rotate-token') { const result = await runAudited(repository, identity.email, 'client.rotate-token', async () => { await strictEmptyJson(request); return useCase.rotate(id); }, () => id, id); response = success(result); }
     else { const result = await runAudited(repository, identity.email, `client.${action}`, async () => { await strictEmptyJson(request); const changed = await repository.setEnabled(id, action === 'enable'); if (!changed) throw errors.notFound(); return useCase.get(id); }, () => id, id); response = success(result); }
-  } else if (url.pathname === '/admin/api/cloudflare/zones' && request.method === 'GET') response = success(await dns.listZones());
-  else if (zoneRecordsMatch && request.method === 'GET') response = success(await dns.listRecords(zoneRecordsMatch[1]!));
-  else if (url.pathname === '/admin/api/cloudflare/validate-record' && request.method === 'POST') { const record = await runAudited(repository, identity.email, 'cloudflare.validate-record', async () => useCase.validate(await strictJson(request)), () => null); response = success(record); }
+  } else if (url.pathname === '/admin/api/cloudflare/records' && request.method === 'GET') response = success(await dns.listRecords(requireFixedDnsZone(zone).id));
   else throw errors.notFound();
   return response;
 }

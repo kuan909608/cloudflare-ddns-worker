@@ -19,4 +19,5 @@ export const errors = {
   unsupportedMedia: () => new AppError(415, 'Content-Type must be application/json', 'UNSUPPORTED_MEDIA_TYPE'),
   rateLimited: () => new AppError(429, 'Too many requests', 'RATE_LIMITED'),
   dnsFailure: () => new AppError(502, 'DNS update failed', 'DNS_UPDATE_FAILED'),
+  dnsZoneNotConfigured: () => new AppError(500, 'DNS Zone is not configured', 'DNS_ZONE_NOT_CONFIGURED'),
 };
