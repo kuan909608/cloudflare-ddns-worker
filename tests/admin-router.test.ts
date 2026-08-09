@@ -80,6 +80,22 @@ describe('admin HTTP API', () => {
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
   });
 
+  it('logs a sanitized category when an unexpected D1 failure becomes a 500', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.enforceRateLimit.mockRejectedValueOnce(new Error('D1_ERROR: no such table: rate_limit_windows'));
+    try {
+      const response = await route(request('/admin/api/config'), env);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ success:false, message:'Internal server error' });
+      expect(log).toHaveBeenCalledWith({
+        event:'request_error', method:'GET', pathname:'/admin/api/config', status:500, category:'D1_SCHEMA_MISSING',
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('rate_limit_windows');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('serves the protected SPA fallback only for extensionless admin paths', async () => {
     const assets = { fetch:vi.fn(async (input:Request) => new Response(new URL(input.url).pathname === '/admin/index.html' ? 'spa' : 'missing', { status:new URL(input.url).pathname === '/admin/index.html' ? 200 : 404 })) };
     const fallbackEnv = { ...env, ASSETS:assets } as unknown as Env;

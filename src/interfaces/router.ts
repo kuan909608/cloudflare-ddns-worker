@@ -9,6 +9,7 @@ import { CloudflareDnsService } from '../services/cloudflare-dns-service';
 import { rateLimitSource } from '../services/ip-service';
 import type { Env } from '../types';
 import { basicCredentials, boundedInteger, enforceSameOrigin, errorResponse, json, strictEmptyJson, strictJson, success } from '../utils/http';
+import { logRequestError } from '../utils/observability';
 import { securityHeaders } from '../utils/security';
 
 const idPattern = '[0-9a-fA-F-]{36}';
@@ -99,6 +100,8 @@ export async function route(request: Request, env: Env): Promise<Response> {
   } catch (error) {
     const pathname = new URL(request.url).pathname;
     const forced = error instanceof AppError && isAdminPath(pathname) && [401, 403].includes(error.status) ? new AppError(403, 'Forbidden', 'FORBIDDEN') : error;
-    return securityHeaders(errorResponse(forced, env.DETAILED_ERRORS === 'true' && env.ENVIRONMENT !== 'production'));
+    const response = errorResponse(forced, env.DETAILED_ERRORS === 'true' && env.ENVIRONMENT !== 'production');
+    if (response.status >= 500) logRequestError(request, pathname, forced, response.status);
+    return securityHeaders(response);
   }
 }
