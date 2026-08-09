@@ -124,7 +124,7 @@ npx wrangler secret list
 
 ### 7. 綁定 Custom Domain 與 TLS
 
-Workers & Pages → 選擇 `cloudflare-ddns-gateway` → Settings → Domains & Routes，將 `APP_HOST` 關聯為唯一 Custom Domain。接著確認：
+Workers & Pages → 選擇 `cloudflare-ddns-worker` → Settings → Domains & Routes，將 `APP_HOST` 關聯為唯一 Custom Domain。接著確認：
 
 - SSL/TLS mode：**Full (strict)**
 - Edge Certificates：**Always Use HTTPS** 已啟用
@@ -268,10 +268,10 @@ npx wrangler d1 time-travel restore REPLACE_AUTO_PROVISIONED_D1_NAME --bookmark 
 Wrangler 已啟用 100% invocation logs 並持久化到 Cloudflare Workers Logs；設定變更需重新部署才會生效。即時追蹤 production Worker：
 
 ```bash
-npx wrangler tail cloudflare-ddns-gateway --format pretty
+npx wrangler tail cloudflare-ddns-worker --format pretty
 ```
 
-先啟動 tail，再重現一次問題。歷史記錄可在 Cloudflare Dashboard → Workers & Pages → `cloudflare-ddns-gateway` → Observability → Logs 查詢，並以 request path 與 HTTP status `500` 篩選。
+先啟動 tail，再重現一次問題。歷史記錄可在 Cloudflare Dashboard → Workers & Pages → `cloudflare-ddns-worker` → Observability → Logs 查詢，並以 request path 與 HTTP status `500` 篩選。
 
 - `401 Unauthorized`：token 缺漏/錯誤/已輪替；不要把 Authorization 貼進 log。
 - UniFi 相容端點 `404`：確認該環境沒有把 `ENABLE_UNIFI_COMPAT` 改為 `false`，且使用的是正確 DDNS hostname。

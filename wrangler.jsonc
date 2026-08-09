@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "cloudflare-ddns-gateway",
+  "name": "cloudflare-ddns-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-25",
   "workers_dev": false,
