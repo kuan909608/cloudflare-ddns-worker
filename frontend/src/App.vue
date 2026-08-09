@@ -2,6 +2,7 @@
 const navigation = [
   { label:'總覽', to:'/' },
   { label:'Clients', to:'/clients' },
+  { label:'Logs', to:'/logs' },
 ];
 </script>
 

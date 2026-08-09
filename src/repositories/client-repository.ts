@@ -1,4 +1,4 @@
-import type { Client, UpdateLog } from '../domain/models';
+import type { AdminUpdateLog, Client, UpdateLog } from '../domain/models';
 
 export interface CreateClientRecord {
   id: string; displayName: string; slug: string; enabled: boolean;
@@ -21,6 +21,7 @@ export interface ClientRepository {
   remove(id: string): Promise<boolean>;
   addLog(log: UpdateLog): Promise<void>;
   logs(id: string, limit: number, offset: number): Promise<UpdateLog[]>;
+  allLogs(limit: number, offset: number): Promise<AdminUpdateLog[]>;
   audit(email: string, action: string, targetId: string | null, result: string): Promise<void>;
   dashboard(): Promise<Record<string, number>>;
 }

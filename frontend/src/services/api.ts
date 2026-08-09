@@ -1,4 +1,4 @@
-import type { AdminConfig, Client, ClientInput, CloudflareRecordOption, UpdateLog } from '../types';
+import type { AdminConfig, AdminUpdateLog, Client, ClientInput, CloudflareRecordOption, UpdateLog } from '../types';
 interface Envelope<T> { success:boolean; data:T; message?:string }
 async function api<T>(path:string, init:RequestInit = {}):Promise<T> {
   const response = await fetch(path, { credentials:'same-origin', ...init, headers:{ Accept:'application/json', ...init.headers } });
@@ -18,5 +18,6 @@ export const adminApi = {
   action:(id:string,action:'enable'|'disable')=>api<Client>(`/admin/api/clients/${encodeURIComponent(id)}/${action}`,{method:'POST',...json({})}),
   rotate:(id:string)=>api<{client:Client;token:string}>(`/admin/api/clients/${encodeURIComponent(id)}/rotate-token`,{method:'POST',...json({})}),
   logs:(id:string)=>api<UpdateLog[]>(`/admin/api/clients/${encodeURIComponent(id)}/logs`),
+  allLogs:()=>api<AdminUpdateLog[]>('/admin/api/logs?limit=100'),
   records:()=>api<CloudflareRecordOption[]>('/admin/api/cloudflare/records'),
 };

@@ -39,6 +39,8 @@ paths:
         '502': { description: DNS update failed }
   /admin/api/dashboard:
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Dashboard counters }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /admin/api/logs:
+    get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }, { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }], responses: { '200': { description: Cross-client DDNS update logs without credentials or raw provider messages }, '400': { description: Invalid pagination }, '403': { $ref: '#/components/responses/Forbidden' } } }
   /admin/api/config:
     get:
       tags: [Admin]

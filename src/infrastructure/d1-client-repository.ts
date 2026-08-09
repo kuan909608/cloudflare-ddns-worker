@@ -1,4 +1,4 @@
-import type { Client, UpdateLog } from '../domain/models';
+import type { AdminUpdateLog, Client, UpdateLog } from '../domain/models';
 import type { ClientRepository, CreateClientRecord } from '../repositories/client-repository';
 
 type Row = Record<string, unknown>;
@@ -18,6 +18,10 @@ function mapClient(row: Row): Client {
 function mapLog(row: Row): UpdateLog {
   return { id: text(row, 'id'), clientId: text(row, 'client_id'), sourceIp: text(row, 'source_ip'), oldIp: nullable(row, 'old_ip'),
     newIp: text(row, 'new_ip'), updated: Boolean(row.updated), status: text(row, 'status'), errorCode: nullable(row, 'error_code'), createdAt: text(row, 'created_at') };
+}
+
+function mapAdminLog(row: Row): AdminUpdateLog {
+  return { ...mapLog(row), clientDisplayName:text(row, 'client_display_name'), clientSlug:text(row, 'client_slug') };
 }
 
 export class D1ClientRepository implements ClientRepository {
@@ -64,6 +68,12 @@ export class D1ClientRepository implements ClientRepository {
   async remove(id: string): Promise<boolean> { const result = await this.db.prepare('DELETE FROM clients WHERE id=?').bind(id).run(); return (result.meta.changes ?? 0) > 0; }
   async addLog(l: UpdateLog): Promise<void> { await this.db.prepare('INSERT INTO update_logs (id, client_id, source_ip, old_ip, new_ip, updated, status, error_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(l.id, l.clientId, l.sourceIp, l.oldIp, l.newIp, l.updated ? 1 : 0, l.status, l.errorCode, l.createdAt).run(); }
   async logs(id: string, limit: number, offset: number): Promise<UpdateLog[]> { const result = await this.db.prepare('SELECT * FROM update_logs WHERE client_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(id, limit, offset).all<Row>(); return result.results.map(mapLog); }
+  async allLogs(limit: number, offset: number): Promise<AdminUpdateLog[]> {
+    const result = await this.db.prepare(`SELECT logs.*, clients.display_name AS client_display_name, clients.slug AS client_slug
+      FROM update_logs logs JOIN clients ON clients.id=logs.client_id
+      ORDER BY logs.created_at DESC LIMIT ? OFFSET ?`).bind(limit, offset).all<Row>();
+    return result.results.map(mapAdminLog);
+  }
   async audit(email: string, action: string, targetId: string | null, result: string): Promise<void> { await this.db.prepare('INSERT INTO admin_audit_logs (id, admin_email, action, target_client_id, result, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), email, action, targetId, result, new Date().toISOString()).run(); }
   async dashboard(): Promise<Record<string, number>> {
     const row = await this.db.prepare(`SELECT

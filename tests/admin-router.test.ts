@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   repository: {
     list:vi.fn(), findById:vi.fn(), findBySlug:vi.fn(), create:vi.fn(), update:vi.fn(), setEnabled:vi.fn(),
     claimRecordProvisioning:vi.fn(), bindProvisionedRecord:vi.fn(), releaseRecordProvisioning:vi.fn(),
-    rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
+    rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), allLogs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
   },
   getZone:vi.fn(), getRecord: vi.fn(), listRecords:vi.fn(), findRecords:vi.fn(), createRecord:vi.fn(),
   updateRecord: vi.fn(),
@@ -51,6 +51,7 @@ beforeEach(() => {
   mocks.repository.list.mockResolvedValue([client]);
   mocks.repository.dashboard.mockResolvedValue({total:1});
   mocks.repository.logs.mockResolvedValue([]);
+  mocks.repository.allLogs.mockResolvedValue([]);
   mocks.repository.update.mockResolvedValue(client);
   mocks.repository.setEnabled.mockResolvedValue(client);
   mocks.repository.rotateToken.mockResolvedValue(client);
@@ -114,6 +115,8 @@ describe('admin HTTP API', () => {
     expect(await (await route(request(`/admin/api/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
     expect((await route(request(`/admin/api/clients/${id}/logs?limit=25&offset=0`), env)).status).toBe(200);
     expect(mocks.repository.logs).toHaveBeenCalledWith(id,25,0);
+    expect((await route(request('/admin/api/logs?limit=100&offset=0'), env)).status).toBe(200);
+    expect(mocks.repository.allLogs).toHaveBeenCalledWith(100,0);
   });
 
   it('lists A/AAAA records only from the Worker fixed DNS Zone', async () => {

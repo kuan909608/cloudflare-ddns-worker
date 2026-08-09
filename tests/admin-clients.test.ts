@@ -17,7 +17,7 @@ function repository(): ClientRepository {
   return {
     list:vi.fn(), findById:vi.fn(async()=>client), findBySlug:vi.fn(), create:vi.fn(), update:vi.fn(),
     claimRecordProvisioning:vi.fn(), bindProvisionedRecord:vi.fn(), releaseRecordProvisioning:vi.fn(),
-    setEnabled:vi.fn(), rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
+    setEnabled:vi.fn(), rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), allLogs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
   };
 }
 

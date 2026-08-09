@@ -13,6 +13,10 @@ function failureCategory(stage: DdnsFailureStage): string {
   return 'DNS_PROVIDER_ERROR';
 }
 
+function failureCode(stage: DdnsFailureStage): string {
+  return `DNS_${stage.toUpperCase()}_FAILED`;
+}
+
 export class DdnsUpdateUseCase {
   constructor(
     private readonly clients: ClientRepository,
@@ -91,7 +95,7 @@ export class DdnsUpdateUseCase {
       console.error({ event:'ddns_update_failed', stage:failureStage, category:failureCategory(failureStage) });
       await Promise.allSettled([
         this.clients.updateStatus(client.id, { ip: client.lastIp ?? ip, sourceIp: ip, status: 'failed', updatedAt: now }),
-        this.clients.addLog({ id: crypto.randomUUID(), clientId: client.id, sourceIp: ip, oldIp, newIp: ip, updated: false, status: 'failed', errorCode: 'DNS_UPDATE_FAILED', createdAt: now }),
+        this.clients.addLog({ id: crypto.randomUUID(), clientId: client.id, sourceIp: ip, oldIp, newIp: ip, updated: false, status: 'failed', errorCode: failureCode(failureStage), createdAt: now }),
       ]);
       throw errors.dnsFailure();
     }

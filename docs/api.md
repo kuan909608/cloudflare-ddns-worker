@@ -16,11 +16,12 @@ Admin API 只接受 Access 驗證後的使用者。所有 POST/PUT/DELETE 僅接
 - `GET/PUT/DELETE /admin/api/clients/{id}`
 - `POST /admin/api/clients/{id}/enable|disable|rotate-token`
 - `GET /admin/api/clients/{id}/logs`
+- `GET /admin/api/logs`
 - `GET /admin/api/cloudflare/records`
 - `GET /admin/api/dashboard`
 - `GET /admin/api/config`
 
-`GET /admin/api/config` 只回傳非敏感 runtime 設定，包括固定 Zone ID/Name；管理頁用同源 origin 產生 DDNS、curl、UniFi URL 與完整主機名。Client list/detail 的 `recordPending` 明確表示尚未首次建立，已綁定 Client 的 `currentDnsIp` 由 Cloudflare DNS API 即時取得；`lastIp` 仍代表最後一次 Gateway 更新狀態。Dashboard 的 recent success/failure 是最近 24 小時 `update_logs` 事件數。
+`GET /admin/api/config` 只回傳非敏感 runtime 設定，包括固定 Zone ID/Name；管理頁用同源 origin 產生 DDNS、curl、UniFi URL 與完整主機名。Client list/detail 的 `recordPending` 明確表示尚未首次建立，已綁定 Client 的 `currentDnsIp` 由 Cloudflare DNS API 即時取得；`lastIp` 仍代表最後一次 Gateway 更新狀態。Dashboard 的 recent success/failure 是最近 24 小時 `update_logs` 事件數。`GET /admin/api/logs` 以時間倒序提供跨 Client 的安全更新紀錄；不包含 Token 或 Cloudflare 原始錯誤訊息。
 
 Cloudflare catalog route 只列出 Worker runtime variable `DNS_ZONE_ID` 所固定 Zone 內的 A/AAAA Records；Zone Name 由 Zone Details API 取得。Create/Update payload 不接受 Zone 或完整 Record Name：`existing` 模式只送 Record ID；`new` 模式只送單一 hostname label 與 A/AAAA。後端核對既有 Record，或組合待建立 FQDN。API Token 只需 `Zone / DNS / Edit`。
 

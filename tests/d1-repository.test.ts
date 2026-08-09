@@ -4,7 +4,7 @@ describe('D1 repository',()=>{it('maps rows while binding untrusted slug as a pa
 
 describe('D1 repository operations',()=>{
   it('persists and maps the complete repository contract with bound parameters',async()=>{
-    const logRow={id:'log',client_id:'id',source_ip:'8.8.8.8',old_ip:'1.1.1.1',new_ip:'8.8.8.8',updated:1,status:'updated',error_code:null,created_at:'now'};
+    const logRow={id:'log',client_id:'id',client_display_name:'Home',client_slug:'home',source_ip:'8.8.8.8',old_ip:'1.1.1.1',new_ip:'8.8.8.8',updated:1,status:'updated',error_code:null,created_at:'now'};
     const statements:{sql:string;args:unknown[]}[]=[];
     const prepare=vi.fn((sql:string)=>{
       const statement={
@@ -28,6 +28,7 @@ describe('D1 repository operations',()=>{
     await repository.updateStatus('id',{ip:'8.8.8.8',sourceIp:'8.8.8.8',status:'updated',updatedAt:'later'});
     await repository.addLog({id:'log',clientId:'id',sourceIp:'8.8.8.8',oldIp:'1.1.1.1',newIp:'8.8.8.8',updated:true,status:'updated',errorCode:null,createdAt:'now'});
     expect(await repository.logs('id',50,0)).toEqual([expect.objectContaining({clientId:'id',updated:true})]);
+    expect(await repository.allLogs(100,0)).toEqual([expect.objectContaining({clientId:'id',clientDisplayName:'Home',clientSlug:'home'})]);
     await repository.audit('admin@example.com','client.update','id','success');
     expect(await repository.dashboard()).toEqual({total:2,enabled:1,disabled:1,recentSuccess:3,recentFailure:1});
     expect(statements.every(({sql,args})=>!sql.includes('admin@example.com')&&!sql.includes('8.8.8.8')||args.length>0)).toBe(true);

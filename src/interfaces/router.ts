@@ -74,6 +74,7 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   let response: Response;
   if (url.pathname === '/admin/api/config' && request.method === 'GET') { const fixedZone = requireFixedDnsZone(zone); const liveZone = await dns.getZone(fixedZone.id); response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.APP_HOST}`, dnsZoneId:liveZone.id, dnsZoneName:liveZone.name, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' }); }
   else if (url.pathname === '/admin/api/dashboard' && request.method === 'GET') response = success(await repository.dashboard());
+  else if (url.pathname === '/admin/api/logs' && request.method === 'GET') { const limit = boundedInteger(url.searchParams.get('limit'), 50, 1, 100); const offset = boundedInteger(url.searchParams.get('offset'), 0, 0, 1_000_000); response = success(await repository.allLogs(limit, offset)); }
   else if (listPath && request.method === 'GET') response = success(await useCase.list());
   else if (listPath && request.method === 'POST') { requireFixedDnsZone(zone); const result = await runAudited(repository, identity.email, 'client.create', async () => useCase.create(await strictJson(request)), (value) => value.client.id); response = success(result, 201); }
   else if (clientMatch && request.method === 'GET') response = success(await useCase.get(clientMatch[1]!));

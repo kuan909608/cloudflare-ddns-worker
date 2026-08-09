@@ -8,4 +8,5 @@ export type ClientInput =
   | { displayName:string; slug:string; bindingMode:'new'; hostname:string; recordType:'A'|'AAAA' };
 export interface CloudflareRecordOption { id:string; name:string; type:'A'|'AAAA'; content:string; }
 export interface UpdateLog { id:string; sourceIp:string; oldIp:string|null; newIp:string; updated:boolean; status:string; errorCode:string|null; createdAt:string; }
+export interface AdminUpdateLog extends UpdateLog { clientId:string; clientDisplayName:string; clientSlug:string; }
 export interface AdminConfig { ddnsOrigin:string; dnsZoneId:string; dnsZoneName:string; unifiCompatibilityEnabled:boolean; }

@@ -38,6 +38,11 @@ export interface UpdateLog {
   createdAt: string;
 }
 
+export interface AdminUpdateLog extends UpdateLog {
+  clientDisplayName: string;
+  clientSlug: string;
+}
+
 export interface AccessIdentity {
   email: string;
   subject: string;
