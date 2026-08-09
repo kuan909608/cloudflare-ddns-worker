@@ -10,7 +10,7 @@ flowchart LR
   UniFi[UniFi / Inadyn] -->|GET + Basic, optional| Update
   Update --> Worker[Cloudflare Worker]
   Admin[Administrator] --> Access[Cloudflare Access]
-  Access --> Console[ddns-admin.example.com]
+  Access --> Console[ddns.example.com/admin/]
   Console --> Worker
   Worker --> D1[(Cloudflare D1)]
   Worker --> DNS[Cloudflare DNS API]
@@ -23,7 +23,7 @@ flowchart LR
 - Cloudflare 帳戶、受管理的 DNS zone、Workers 與 D1 權限
 - Node.js 24（只作建置工具；production 沒有 Node server runtime）與 npm
 - Wrangler 4.51+
-- 兩個可用 hostname，例如 `ddns.example.com` 與 `ddns-admin.example.com`
+- 一個位於 Cloudflare DNS zone 的 hostname，例如 `ddns.example.com`
 
 ## 安裝與本機開發
 
@@ -35,23 +35,20 @@ npm run db:migrate:local
 npm run dev
 ```
 
-本機 `.dev.vars` 只能放測試 secret 且已被 gitignore。第一次尚無 Access JWT 時，建議測試純 service/unit tests；完整 Admin flow 請在 development Access application 驗證。
+本機 `.dev.vars` 只能放測試 secret 且已被 gitignore。第一次尚無 Access JWT 時，建議測試純 service/unit tests；完整 Admin flow 請在正式 Access application 驗證。本機 D1 由 Wrangler 模擬，不會在 Cloudflare 帳戶建立額外資料庫。
 
 ## Cloudflare 建置
 
 ### 1. 建立 D1
 
-每個環境獨立建立，並將輸出的 UUID 填入 `wrangler.jsonc` 對應環境：
+`wrangler.jsonc` 使用只有 `DDNS_DB` binding、沒有 resource ID 的 draft binding。Wrangler 4.45+ 在第一次 `deploy` 時會自動建立並綁定唯一的 D1；本機 `dev` 則只建立本機模擬資料庫：
 
 ```bash
-npx wrangler d1 create cloudflare-ddns-development
-npx wrangler d1 create cloudflare-ddns-staging
-npx wrangler d1 create cloudflare-ddns-production
-npm run db:migrate:staging
-npm run db:migrate:production
+npm run deploy
+npm run db:migrate
 ```
 
-Migration 只可向前新增；production 前先在 staging 演練並取得 Time Travel bookmark。
+這是 Wrangler deployment-time provisioning，不是 Worker runtime 使用帳戶 API 建立資源。Migration 不會隨 D1 自動建立而自動套用；第一次 deploy 後必須執行 `npm run db:migrate`。若由 Cloudflare Git Build 首次建立，resource ID 只會出現在 Dashboard，不會自動 commit 回 repository。Migration 只可向前新增；正式 migration 前先備份並取得 Time Travel bookmark。本機可先用 `npm run db:migrate:local` 驗證。
 
 ### 2. 建立最小權限 DNS API Token
 
@@ -59,42 +56,47 @@ Cloudflare Dashboard → My Profile → API Tokens → Create Custom Token：
 
 - Permission：Zone / DNS / Edit
 - Zone Resources：Include / Specific zone / 只選實際使用 zone
-- 可加 client IP filter 與期限；不同環境用不同 token
+- 可加 client IP filter 與期限
 
 不要使用 Global API Key。不要把 token 寫入 Git、D1 或前端；以 Wrangler secret 設定：
 
 ```bash
-npx wrangler secret put CLOUDFLARE_DNS_API_TOKEN --env staging
-npx wrangler secret put ACCESS_TEAM_DOMAIN --env staging
-npx wrangler secret put ACCESS_AUD --env staging
-npx wrangler secret put ADMIN_ALLOWED_EMAILS --env staging
+npx wrangler secret put CLOUDFLARE_DNS_API_TOKEN
+npx wrangler secret put ACCESS_TEAM_DOMAIN
+npx wrangler secret put ACCESS_AUD
+npx wrangler secret put ADMIN_ALLOWED_EMAILS
 ```
 
-對 production 重複一次。`ADMIN_ALLOWED_EMAILS` 是逗號分隔完整 email；不要用網域 wildcard。即使 team domain 本身通常不是 secret，本專案仍依安全基線以 secret 管理。
+`ADMIN_ALLOWED_EMAILS` 是逗號分隔完整 email；不要用網域 wildcard。即使 team domain 本身通常不是 secret，本專案仍依安全基線以 secret 管理。
 
 ### 3. Cloudflare Access
 
 Zero Trust → Settings → Authentication 啟用 **Cloudflare** identity provider，並啟用 restrict to account members。建立 Self-hosted application：
 
-- Domain：`ddns-admin.example.com`
+- Domain/path：`ddns.example.com/admin/*`
 - Session duration：依風險選短時效（建議 8 小時以下）
 - Allow policy：Include 指定 Email；Require **Cloudflare Account Member** 並指定 account
 - 不建立 Bypass/Everyone policy
 
 將 Application AUD tag 存成 `ACCESS_AUD`。Worker 會再次驗證 `Cf-Access-Jwt-Assertion` 的 RS256 signature、issuer、audience、expiration 與 email allowlist。Account Member 是該 AUD 所屬 Access application 的 Require policy；Worker 以簽章與 AUD 綁定確保 assertion 來自該 application，不能只靠可偽造 header。管理驗證失敗統一 403。
 
-`ddns.example.com` 不建立互動式 Access application；它只接受 Client Bearer token。兩個 hostname 都由 Worker host allowlist 再隔離。
+不要對整個 `ddns.example.com` 建立 Access application，否則設備更新也會被互動式登入攔截。只有 `/admin/*` 受 Access 保護；公開 `/api/ddns/*` 仍要求每個 Client 的獨立 Token。Worker 對所有管理請求再次驗證 JWT，因此即使 Access 邊界設定錯誤也不會公開管理頁或 API。
 
-### 4. Custom Domains 與環境
+管理介面的正式入口是 `https://ddns.example.com/admin/`。裸 `/admin` 只會在檢查 HTTPS 與 hostname 後重新導向 `/admin/`，讓 Cloudflare Access 的 `/admin/*` application path 接手登入流程。
 
-替換 `wrangler.jsonc` 的 example hostname、D1 UUID 與 Rate Limiting namespace。staging/production 各有獨立 Worker、D1、domains、AUD、allowed emails 與 DNS token。部署：
+### 4. 單一 Custom Domain
+
+替換 `wrangler.jsonc` 的 `APP_HOST`。Custom Domain 由 Cloudflare Dashboard 手動關聯；設定檔刻意不包含 `routes`，避免後續 deploy 覆蓋 Dashboard 設定。預設只需要一個 Worker、一個 D1、一個 Custom Domain 與一個 Access application。部署：
 
 ```bash
-npm run deploy:staging
-npm run deploy:production
+npm run deploy
 ```
 
-Worker Static Assets 以 `run_worker_first` 保證 Vue 資產也先經 host/Access gate。Cloudflare SSL/TLS mode 必須使用 **Full (strict)**，Edge Certificates 必須啟用 **Always Use HTTPS**；Worker 仍會在讀取 Authorization 前拒絕 custom domain 的明文 HTTP。若帳戶方案不提供 Rate Limiting binding，移除該環境的 `ratelimits` 設定；程式會使用 D1 固定窗口 fallback。三個 limiter 分別是來源 IP pre-auth 60/min、驗證成功後每 Client 10/min、每管理者 60/min。原生 binding 是 eventually consistent abuse control，不作精準計費。
+整個專案只有一個非敏感網域變數 `APP_HOST`。到 Domains & Routes 將該 hostname 關聯至 Worker；只設定變數不會建立 DNS、憑證或 Custom Domain，這些控制平面資源仍由 Dashboard 建立。
+
+Worker Static Assets 以 `run_worker_first` 保證 Vue 資產也先經 Worker 與 Access JWT gate。Cloudflare SSL/TLS mode 必須使用 **Full (strict)**，Edge Certificates 必須啟用 **Always Use HTTPS**；Worker 仍會在讀取 Authorization 前拒絕 custom domain 的明文 HTTP。限流全部使用同一個 D1 的固定窗口表：來源 IP pre-auth 60/min、驗證成功後每 Client 10/min、每管理者 60/min，不需要額外 Rate Limiting binding。
+
+此架構以 Workers Free、D1 Free 與 Zero Trust Free 額度為目標；網域註冊費不包含在內。Free plan 超過每日 Workers 或 D1 額度時服務可能暫停到額度重置，不應把免費額度視為 SLA。
 
 ## Client 操作
 
@@ -123,15 +125,15 @@ UniFi Network 的 Custom DDNS 由 Inadyn 驅動，會用 GET 與 HTTP Basic Auth
 主機名稱：linhome-to.kthome.net
 使用者名稱：linhome
 密碼：ddns_REPLACE_WITH_ONE_TIME_TOKEN
-伺服器：ddns.example.com/api/compat/unifi/linhome?hostname=
+伺服器：ddns.example.com/api/ddns/linhome/unifi?hostname=
 ```
 
-部分 UniFi 版本要求 Server 不含 `https://`；僅可在已確認該韌體的 Inadyn 固定使用 HTTPS、且 Cloudflare 已啟用 Always Use HTTPS 時採此格式。若該版本接受完整 scheme，必須優先填 `https://ddns.example.com/api/compat/unifi/linhome?hostname=`。`?hostname=` 是給 Inadyn 附加 hostname 的相容位置；Worker 會完全忽略它。若封包測試顯示設備送出 HTTP，請勿使用相容模式，改用支援 HTTPS POST 的排程腳本。
+部分 UniFi 版本要求 Server 不含 `https://`；僅可在已確認該韌體的 Inadyn 固定使用 HTTPS、且 Cloudflare 已啟用 Always Use HTTPS 時採此格式。若該版本接受完整 scheme，必須優先填 `https://ddns.example.com/api/ddns/linhome/unifi?hostname=`。`?hostname=` 是給 Inadyn 附加 hostname 的相容位置；Worker 會完全忽略它。若封包測試顯示設備送出 HTTP，請勿使用相容模式，改用支援 HTTPS POST 的排程腳本。
 
 相容請求的語意為：
 
 ```http
-GET /api/compat/unifi/linhome?hostname=linhome-to.kthome.net
+GET /api/ddns/linhome/unifi?hostname=linhome-to.kthome.net
 Authorization: Basic base64(linhome:ddns_CLIENT_TOKEN)
 ```
 
@@ -153,7 +155,7 @@ UniFi 的「主機名稱」欄位請填該 Client 已綁定的 record name，供
 
 FortiOS 內建 `config system ddns` 面向列舉的第三方 provider，使用 username/password 或 TSIG，沒有通用的 Bearer-header + POST 模板。因此不能把 token 填進 `ddns-password` 假設可相容本 API。
 
-可行方式是在受管理的外部/內建 automation 能安全執行 HTTPS POST 的 FortiOS 版本，建立定時觸發動作呼叫主端點；能力與語法依 FortiOS 型號/版本而異，正式設定前以 Fortinet 文件及 staging endpoint 驗證。若設備只支援原生 provider，維持本 Gateway 的安全基線時應使用同站 Linux/PowerShell 排程；不要降級成 query/path token。FortiGate 的 WAN 出口必須直接經 Cloudflare，才能讓 `CF-Connecting-IP` 代表正確 public IP。
+可行方式是在受管理的外部/內建 automation 能安全執行 HTTPS POST 的 FortiOS 版本，建立定時觸發動作呼叫主端點；能力與語法依 FortiOS 型號/版本而異，正式設定前以 Fortinet 文件及測試 Client 驗證。若設備只支援原生 provider，維持本 Gateway 的安全基線時應使用同站 Linux/PowerShell 排程；不要降級成 query/path token。FortiGate 的 WAN 出口必須直接經 Cloudflare，才能讓 `CF-Connecting-IP` 代表正確 public IP。
 
 ## 其他設備腳本
 
@@ -196,19 +198,19 @@ npm audit --audit-level=high
 2. 授權 Cloudflare Workers & Pages GitHub App 只存取此 repository。
 3. Production branch 選 `main`；不需要 preview 時關閉 non-production branch builds。
 4. Build command 設為 `npm run build:frontend`。
-5. Deploy command 設為 `npx wrangler deploy --env production`。
+5. Deploy command 設為 `npx wrangler deploy`。
 6. Root directory 保持 `/`。
-7. D1 migration 在首次部署及每次 schema 變更前，由管理者在本機手動執行 `npm run db:migrate:production`。
+7. 首次 deploy 讓 Wrangler 建立 D1 後，以及每次 schema 變更時，由管理者在本機手動執行 `npm run db:migrate`。
 
 關聯後，Cloudflare Workers Builds 會在 `main` push 時建置及部署；這是 Cloudflare 管理的 Git integration，不需要 repository 內的 CI workflow。Client Token 與 Cloudflare DNS API Token 不得放進 GitHub repository、build variables 或部署輸出；Worker runtime secrets 必須在 Cloudflare Worker environment 設定。
 
 ## 備份、匯出與還原
 
-D1 production storage 自動提供 Time Travel。先查 bookmark：
+D1 提供 Time Travel。先查 bookmark：
 
 ```bash
-npx wrangler d1 time-travel info cloudflare-ddns-production
-npx wrangler d1 export cloudflare-ddns-production --remote --output backups/ddns.sql
+npx wrangler d1 time-travel info REPLACE_AUTO_PROVISIONED_D1_NAME
+npx wrangler d1 export REPLACE_AUTO_PROVISIONED_D1_NAME --remote --output backups/ddns.sql
 ```
 
 Clients/Logs 可用 `scripts/export-clients.sql`、`scripts/export-logs.sql` 搭配 `wrangler d1 execute --remote --file` 查詢/匯出。Clients export 含 token hash，仍是敏感資料：加密、最小存取、設定 retention；永遠沒有明文 token。
@@ -216,7 +218,7 @@ Clients/Logs 可用 `scripts/export-clients.sql`、`scripts/export-logs.sql` 搭
 還原會覆寫資料，先記錄目前 bookmark、取得變更核准並停止管理變更，再執行：
 
 ```bash
-npx wrangler d1 time-travel restore cloudflare-ddns-production --bookmark REPLACE_BOOKMARK
+npx wrangler d1 time-travel restore REPLACE_AUTO_PROVISIONED_D1_NAME --bookmark REPLACE_BOOKMARK
 ```
 
 還原到 token 輪替前會使舊 hash 恢復；還原後必須輪替所有受影響 Client token。
@@ -229,7 +231,7 @@ npx wrangler d1 time-travel restore cloudflare-ddns-production --bookmark REPLAC
 - `400 No valid public source IP`：record family 不符、CGNAT/private/link-local，或不是經 Cloudflare custom domain 呼叫。`ALLOW_PRIVATE_IPS` 預設 false；開啟時只額外允許 RFC1918/IPv6 ULA，loopback、unspecified、link-local、multicast 等仍永久拒絕，不建議 production 開啟。
 - `409`：slug、record ID 或 record name 已綁定。
 - `502`：DNS token scope、zone/record 綁定或 Cloudflare API 問題；Client response 刻意不含上游細節。
-- Vue 404/Access bypass：確認 assets `run_worker_first:true`，管理 hostname 已納入 Access application，且沒有 Bypass policy。
+- Vue 404/Access bypass：確認 assets `run_worker_first:true`、Vite base 為 `/admin/`、Access application path 是 `ddns.example.com/admin/*`，且沒有 Bypass policy。
 
 Worker log 禁止輸出 Authorization、JWT、cookie、token/hash、secret 或 Cloudflare 原始錯誤。Production 不得啟用 `DETAILED_ERRORS`。建議設定 update/admin audit retention、Cloudflare WAF 與異常 401/429/502 告警。
 

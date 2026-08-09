@@ -4,8 +4,7 @@ info:
   version: 1.0.0
   license: { name: MIT }
 servers:
-  - { url: 'https://ddns.example.com', description: DDNS update }
-  - { url: 'https://ddns-admin.example.com', description: Access-protected administration }
+  - { url: 'https://ddns.example.com', description: DDNS update and path-isolated Access administration }
 tags:
   - { name: DDNS }
   - { name: Admin, description: Requires Cloudflare Access and an allowed administrator email. }
@@ -23,7 +22,7 @@ paths:
         '403': { description: Client disabled }
         '429': { description: Rate limited }
         '502': { description: DNS update failed }
-  /api/compat/unifi/{clientSlug}:
+  /api/ddns/{clientSlug}/unifi:
     get:
       tags: [DDNS]
       summary: Optional UniFi/Inadyn compatibility endpoint
@@ -38,33 +37,33 @@ paths:
         '404': { description: Compatibility mode disabled }
         '429': { description: Rate limited }
         '502': { description: DNS update failed }
-  /api/admin/dashboard:
+  /admin/api/dashboard:
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Dashboard counters }, '403': { $ref: '#/components/responses/Forbidden' } } }
-  /api/admin/config:
+  /admin/api/config:
     get:
       tags: [Admin]
       security: [{ accessJwt: [] }]
       responses:
         '200': { description: Safe runtime configuration, content: { application/json: { schema: { $ref: '#/components/schemas/AdminConfigEnvelope' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
-  /api/admin/clients:
+  /admin/api/clients:
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Client list }, '403': { $ref: '#/components/responses/Forbidden' } } }
     post:
       tags: [Admin]
       security: [{ accessJwt: [] }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }
       responses: { '201': { description: Client and one-time token }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { description: Duplicate binding } }
-  /api/admin/clients/{id}:
+  /admin/api/clients/{id}:
     parameters: [{ $ref: '#/components/parameters/ClientId' }]
     get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Client detail }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { description: Not found } } }
     put: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ClientInput' } } } }, responses: { '200': { description: Updated }, '403': { $ref: '#/components/responses/Forbidden' } } }
     delete: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { $ref: '#/components/requestBodies/EmptyJson' }, responses: { '200': { description: Deleted }, '403': { $ref: '#/components/responses/Forbidden' }, '415': { description: JSON Content-Type required } } }
-  /api/admin/clients/{id}/{action}:
+  /admin/api/clients/{id}/{action}:
     parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: action, in: path, required: true, schema: { enum: [enable, disable, rotate-token] } }]
     post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { $ref: '#/components/requestBodies/EmptyJson' }, responses: { '200': { description: Action completed; rotate-token includes one-time token }, '403': { $ref: '#/components/responses/Forbidden' }, '415': { description: JSON Content-Type required } } }
-  /api/admin/clients/{id}/logs:
+  /admin/api/clients/{id}/logs:
     get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }, { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }], responses: { '200': { description: Update logs }, '400': { description: Invalid pagination }, '403': { $ref: '#/components/responses/Forbidden' } } }
-  /api/admin/cloudflare/validate-record:
+  /admin/api/cloudflare/validate-record:
     post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecordInput' } } } }, responses: { '200': { description: Validated DNS record }, '403': { $ref: '#/components/responses/Forbidden' } } }
 components:
   securitySchemes:

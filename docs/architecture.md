@@ -9,11 +9,11 @@ flowchart LR
   W --> D1[(D1)]
   W -->|Worker secret| DNS[Cloudflare DNS API]
   A[管理者] --> AC[Cloudflare Access]
-  AC -->|Access JWT| M[ddns-admin.example.com]
+  AC -->|Access JWT| M[ddns.example.com/admin/]
   M --> W
 ```
 
-同一個 ES Module Worker 由 Host header 建立硬邊界。DDNS host 只接受 `/api/ddns/:slug`；管理 host 只提供 Vue 靜態資產與 `/api/admin/*`。未知 host fail closed。管理請求同時受 Access edge policy 與 Worker 內 RS256 JWT 驗證保護。
+單一 ES Module Worker 由 Host 與 path 建立硬邊界。`APP_HOST` 的 `/api/ddns/:slug` 是 Client Token API；`/admin/*` 提供 Vue 管理頁與 `/admin/api/*`。裸 `/admin` 在 hostname 與 HTTPS 檢查後重新導向 `/admin/`，再由 Access edge policy 接手。其他路徑與未知 host fail closed。管理靜態資產和 API 都同時受 Access edge policy 與 Worker 內 RS256 JWT 驗證保護。
 
 ## 分層
 
@@ -33,7 +33,7 @@ Worker 是無狀態協調層。D1 是設定、狀態與 audit 的唯一資料來
    UniFi adapter 預設啟用，將 Basic password 轉交相同 token use case；可用獨立 feature flag 關閉，且不允許 query token。
 2. Token 以 32-byte CSPRNG 產生，只存 SHA-256；輪替單一 D1 update 立即取代舊 hash。
 3. Client 與 record 為一對一；更新 use case 不接收任何 record/IP 欄位。
-4. 原生 Rate Limiting binding 分成來源 IP pre-auth、驗證後 client id、管理者 email 三層；其 eventual consistency 特性適合 abuse mitigation，不作計費。沒有 binding 時採 D1 固定窗口 fallback，並持續清除過期窗口。
+4. 單一 D1 的固定窗口表依 key prefix 分成來源 IP pre-auth、驗證後 client id、管理者 email 三層，並持續清除過期窗口；不需要其他儲存或 Rate Limiting binding。
 5. Cloudflare API adapter 只回傳正規化錯誤碼，response/log 都經 redaction。
 6. Static assets 也先經 Worker host 與 Access 驗證；不讓直接 assets bypass。
 

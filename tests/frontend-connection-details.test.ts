@@ -6,6 +6,6 @@ describe('connection details', () => {
     const origin = 'https://ddns-staging.kthome.net';
     expect(ddnsUpdateUrl(origin, 'linhome')).toBe('https://ddns-staging.kthome.net/api/ddns/linhome');
     expect(curlCommand(origin, 'linhome', '<CLIENT_TOKEN>')).toContain('https://ddns-staging.kthome.net/api/ddns/linhome');
-    expect(unifiSettings(origin, 'linhome', 'linhome.kthome.net', '<CLIENT_TOKEN>')).toContain('伺服器: ddns-staging.kthome.net/api/compat/unifi/linhome?hostname=');
+    expect(unifiSettings(origin, 'linhome', 'linhome.kthome.net', '<CLIENT_TOKEN>')).toContain('伺服器: ddns-staging.kthome.net/api/ddns/linhome/unifi?hostname=');
   });
 });

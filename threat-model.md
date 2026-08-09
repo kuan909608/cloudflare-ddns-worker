@@ -11,11 +11,11 @@
 | 重放攻擊 | 竊得的 Bearer request 可重送 | Worker 拒絕明文 HTTP、Cloudflare Always Use HTTPS、rate limit、來源 IP 只能更新成 edge observed IP、token rotation | Bearer token 本質不具 nonce；同一 NAT 攻擊仍可能重放 |
 | 暴力破解 | 猜測 client token、隨機 slug 消耗 D1，或錯誤 Token 排擠合法更新 | 256-bit entropy、constant-time hash compare、來源 IP pre-auth 60/min、驗證後 per-client 10/min、統一 401 | 分散式低速掃描仍可能消耗 Worker 資源 |
 | DNS Record 越權更新 | client 操作其他 record | record 綁定在 D1、API 不收 record/IP、DB unique constraint、更新前核對 type/name | 管理者誤綁定仍可能造成錯誤 |
-| Worker Secret 洩漏 | DNS token/Access config 暴露 | Wrangler secrets、禁止 log/response、分環境、最小 Cloudflare RBAC | Cloudflare 管理平面被接管 |
+| Worker Secret 洩漏 | DNS token/Access config 暴露 | Wrangler secrets、禁止 log/response、最小 Cloudflare RBAC | Cloudflare 管理平面被接管 |
 | 原始碼或部署環境洩漏 | 原始碼、build 設定或 runtime credential 被 exfiltrate | Repository 不含自動化 workflow、Cloudflare Git App 只授權指定 repository、runtime secrets 只設於 Worker environment、無 client token、branch protection | GitHub 或 Cloudflare 管理帳號遭入侵時仍可能觸發惡意部署 |
 | Supply Chain Attack | npm dependency或 Cloudflare build 被植入 | lockfile、本機 npm audit、最少 production deps、人工審查升級、限制 Cloudflare Git App repository scope | Registry、maintainer、GitHub 或 Cloudflare build chain compromise 無法完全排除 |
 | 偽造來源 IP | DNS 被更新為任意 IP | 不讀 body/query；CF-Connecting-IP 存在但 family 不符時 fail closed；僅在它缺漏/格式無效時依規格檢查 XFF；嚴格 global-unicast validation，private mode 只放行 RFC1918/ULA | Worker 被非預期路徑呼叫時轉送 header 風險仍需由 custom domain、host gate 與 Cloudflare edge 維持 |
-| DoS / 資源耗盡 | D1/API 成本與延遲上升 | 原生 rate limiter、body/route/method 限制、Cloudflare WAF 可加強 | 全球分散攻擊仍可能觸及 Worker |
+| DoS / 資源耗盡 | D1/API 成本與延遲上升 | D1 固定窗口三層限流、過期窗口索引清理、body/route/method 限制、Cloudflare WAF 可加強 | 全球分散攻擊仍可能觸及 Worker，且 limiter 與業務資料共用 D1 額度 |
 
 ## 資產與安全目標
 

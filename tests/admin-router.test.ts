@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from '../src/domain/models';
+import { AppError } from '../src/domain/errors';
 import type { Env } from '../src/types';
 
 const mocks = vi.hoisted(() => ({
@@ -28,14 +29,14 @@ const client: Client = {
 };
 const record = { id:client.recordId, zoneId:client.zoneId, zoneName:client.zoneName, name:client.recordName, type:'A' as const, content:'8.8.8.8', ttl:1 };
 const env = {
-  ENVIRONMENT:'production', DDNS_HOST:'ddns.kthome.net', ADMIN_HOST:'admin.kthome.net', ENABLE_UNIFI_COMPAT:'true',
+  ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', ENABLE_UNIFI_COMPAT:'true',
   ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com', ACCESS_AUD:'aud', ADMIN_ALLOWED_EMAILS:'admin@example.com',
   CLOUDFLARE_DNS_API_TOKEN:'secret', DDNS_DB:{} as D1Database,
   ASSETS:{ fetch:vi.fn(async () => new Response('asset')) },
 } as unknown as Env;
 
 function request(path:string, method='GET', body?:unknown, headers:HeadersInit={}) {
-  return new Request(`https://admin.kthome.net${path}`, {
+  return new Request(`https://ddns.kthome.net${path}`, {
     method,
     headers:{ ...(body === undefined ? {} : {'Content-Type':'application/json'}), ...headers },
     ...(body === undefined ? {} : {body:JSON.stringify(body)}),
@@ -44,6 +45,7 @@ function request(path:string, method='GET', body?:unknown, headers:HeadersInit={
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.verifyAccess.mockResolvedValue({ email:'admin@example.com', subject:'member' });
   mocks.repository.findById.mockResolvedValue(client);
   mocks.repository.list.mockResolvedValue([client]);
   mocks.repository.dashboard.mockResolvedValue({total:1});
@@ -58,37 +60,59 @@ beforeEach(() => {
 });
 
 describe('admin HTTP API', () => {
+  it('redirects the bare admin path to the Access-protected trailing-slash path', async () => {
+    const response = await route(request('/admin'), env);
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get('location')).toBe('https://ddns.kthome.net/admin/');
+    expect(mocks.verifyAccess).not.toHaveBeenCalled();
+  });
+
+  it('keeps root public routing closed and requires Access before serving admin assets', async () => {
+    expect((await route(request('/'), env)).status).toBe(404);
+    expect(mocks.verifyAccess).not.toHaveBeenCalled();
+    mocks.verifyAccess.mockRejectedValueOnce(new AppError(401, 'Unauthorized', 'UNAUTHORIZED'));
+    expect((await route(request('/admin/'), env)).status).toBe(403);
+  });
+
   it('serves Access-protected assets without consuming API rate limit', async () => {
-    expect(await (await route(request('/'), env)).text()).toBe('asset');
+    expect(await (await route(request('/admin/'), env)).text()).toBe('asset');
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
   });
 
+  it('serves the protected SPA fallback only for extensionless admin paths', async () => {
+    const assets = { fetch:vi.fn(async (input:Request) => new Response(new URL(input.url).pathname === '/admin/index.html' ? 'spa' : 'missing', { status:new URL(input.url).pathname === '/admin/index.html' ? 200 : 404 })) };
+    const fallbackEnv = { ...env, ASSETS:assets } as unknown as Env;
+    expect(await (await route(request('/admin/clients'), fallbackEnv)).text()).toBe('spa');
+    expect((await route(request('/admin/missing.js'), fallbackEnv)).status).toBe(404);
+  });
+
   it('returns runtime config, dashboard, list, live detail and logs', async () => {
-    expect(await (await route(request('/api/admin/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net'}});
-    expect((await route(request('/api/admin/dashboard'), env)).status).toBe(200);
-    expect((await route(request('/api/admin/clients'), env)).status).toBe(200);
-    expect(await (await route(request(`/api/admin/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
-    expect((await route(request(`/api/admin/clients/${id}/logs?limit=25&offset=0`), env)).status).toBe(200);
+    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net'}});
+    expect((await route(request('/admin/api/dashboard'), env)).status).toBe(200);
+    expect((await route(request('/admin/api/clients'), env)).status).toBe(200);
+    expect(await (await route(request(`/admin/api/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
+    expect((await route(request(`/admin/api/clients/${id}/logs?limit=25&offset=0`), env)).status).toBe(200);
     expect(mocks.repository.logs).toHaveBeenCalledWith(id,25,0);
   });
 
   it('creates, updates, deletes, enables, disables and rotates with JSON mutation policy', async () => {
     const input = {displayName:'Home',slug:'home-1',zoneId:client.zoneId,zoneName:client.zoneName,recordId:client.recordId,recordName:client.recordName,recordType:'A'};
-    expect((await route(request('/api/admin/clients','POST',input),env)).status).toBe(201);
-    expect((await route(request(`/api/admin/clients/${id}`,'PUT',input),env)).status).toBe(200);
-    expect((await route(request(`/api/admin/clients/${id}`,'DELETE',{}),env)).status).toBe(200);
-    expect(await (await route(request(`/api/admin/clients/${id}/enable`,'POST',{}),env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
-    expect((await route(request(`/api/admin/clients/${id}/disable`,'POST',{}),env)).status).toBe(200);
-    expect(await (await route(request(`/api/admin/clients/${id}/rotate-token`,'POST',{}),env)).json()).toMatchObject({data:{client:{currentDnsIp:'8.8.8.8'}}});
+    expect((await route(request('/admin/api/clients','POST',input),env)).status).toBe(201);
+    expect((await route(request(`/admin/api/clients/${id}`,'PUT',input),env)).status).toBe(200);
+    expect((await route(request(`/admin/api/clients/${id}`,'DELETE',{}),env)).status).toBe(200);
+    expect(await (await route(request(`/admin/api/clients/${id}/enable`,'POST',{}),env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
+    expect((await route(request(`/admin/api/clients/${id}/disable`,'POST',{}),env)).status).toBe(200);
+    expect(await (await route(request(`/admin/api/clients/${id}/rotate-token`,'POST',{}),env)).json()).toMatchObject({data:{client:{currentDnsIp:'8.8.8.8'}}});
     expect(mocks.repository.audit).toHaveBeenCalledWith('admin@example.com','client.rotate-token',id,'success');
   });
 
   it('validates records and rejects invalid pagination, media type, origin and routes', async () => {
     const recordInput = {zoneId:client.zoneId,zoneName:client.zoneName,recordId:client.recordId,recordName:client.recordName,recordType:'A'};
-    expect((await route(request('/api/admin/cloudflare/validate-record','POST',recordInput),env)).status).toBe(200);
-    expect((await route(request(`/api/admin/clients/${id}/logs?limit=NaN`),env)).status).toBe(400);
-    expect((await route(request(`/api/admin/clients/${id}/enable`,'POST'),env)).status).toBe(415);
-    expect((await route(request(`/api/admin/clients/${id}/enable`,'POST',{}, {Origin:'https://evil.example','Sec-Fetch-Site':'cross-site'}),env)).status).toBe(403);
-    expect((await route(request('/api/admin/missing'),env)).status).toBe(404);
+    expect((await route(request('/admin/api/cloudflare/validate-record','POST',recordInput),env)).status).toBe(200);
+    expect((await route(request(`/admin/api/clients/${id}/logs?limit=NaN`),env)).status).toBe(400);
+    expect((await route(request(`/admin/api/clients/${id}/enable`,'POST'),env)).status).toBe(415);
+    expect((await route(request(`/admin/api/clients/${id}/enable`,'POST',{}, {Origin:'https://evil.example','Sec-Fetch-Site':'cross-site'}),env)).status).toBe(403);
+    expect((await route(request('/admin/api/missing'),env)).status).toBe(404);
   });
 });

@@ -53,3 +53,4 @@ CREATE TABLE rate_limit_windows (
   request_count INTEGER NOT NULL,
   PRIMARY KEY (bucket_key, window_start)
 );
+CREATE INDEX ix_rate_limit_windows_start ON rate_limit_windows(window_start);
