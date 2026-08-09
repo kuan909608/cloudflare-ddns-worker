@@ -37,66 +37,123 @@ npm run dev
 
 本機 `.dev.vars` 只能放測試 secret 且已被 gitignore。第一次尚無 Access JWT 時，建議測試純 service/unit tests；完整 Admin flow 請在正式 Access application 驗證。本機 D1 由 Wrangler 模擬，不會在 Cloudflare 帳戶建立額外資料庫。
 
-## Cloudflare 建置
+## 部署步驟
 
-### 1. 建立 D1
+以下流程適用於全新的 production Worker。安全原則是：先完成 D1 migration、Access 與 runtime secrets，最後才把公開 Custom Domain 指向 Worker。若同名 Worker 已經有公開路由，先移除路由或安排維護時段再操作。
 
-`wrangler.jsonc` 使用只有 `DDNS_DB` binding、沒有 resource ID 的 draft binding。Wrangler 4.45+ 在第一次 `deploy` 時會自動建立並綁定唯一的 D1；本機 `dev` 則只建立本機模擬資料庫：
+### 1. 安裝並完成本機驗證
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm audit --audit-level=high
+npm run db:migrate:local
+```
+
+所有命令必須通過。正式 secret 不得放進 `.dev.vars`、GitHub、build variables 或任何已追蹤檔案。
+
+### 2. 設定網域並登入 Cloudflare
+
+將 `wrangler.jsonc` 的 `APP_HOST` 從 `ddns.example.com` 改成正式 hostname，然後確認 Wrangler 使用正確帳戶：
+
+```bash
+npx wrangler login
+npx wrangler whoami
+```
+
+專案刻意設定 `workers_dev:false` 且不在 `wrangler.jsonc` 宣告 `routes`；Custom Domain 會在最後由 Dashboard 手動關聯，避免 deploy 覆蓋控制平面設定。
+
+### 3. 首次部署並建立 D1
 
 ```bash
 npm run deploy
-npm run db:migrate
 ```
 
-這是 Wrangler deployment-time provisioning，不是 Worker runtime 使用帳戶 API 建立資源。Migration 不會隨 D1 自動建立而自動套用；第一次 deploy 後必須執行 `npm run db:migrate`。若由 Cloudflare Git Build 首次建立，resource ID 只會出現在 Dashboard，不會自動 commit 回 repository。Migration 只可向前新增；正式 migration 前先備份並取得 Time Travel bookmark。本機可先用 `npm run db:migrate:local` 驗證。
+`DDNS_DB` 是沒有 resource ID 的 draft binding。Wrangler 4.45+ 會在首次 deploy 自動建立並綁定唯一 D1；這是部署階段的資源建立，不是 Worker runtime 呼叫帳戶 API。此時尚未綁 Custom Domain，不應有公開流量。
 
-### 2. 建立最小權限 DNS API Token
+### 4. 在公開服務前套用 migration
+
+```bash
+npm run db:migrate
+npx wrangler d1 migrations list DDNS_DB --remote
+```
+
+確認沒有待套用 migration，再到 D1 Dashboard 記下資料庫名稱與 Time Travel bookmark。Migration 不會隨 D1 自動建立而套用；禁止在空 schema 狀態下綁定公開網域。
+
+### 5. 建立 Cloudflare Access application
+
+Zero Trust → Settings → Authentication 啟用 **Cloudflare** identity provider，並啟用 restrict to account members。建立 Self-hosted application：
+
+- Domain/path：`ddns.example.com/admin/*`，實際部署時替換成 `APP_HOST`
+- Session duration：8 小時以下，依風險縮短
+- Allow policy：Include 指定 Email；Require **Cloudflare Account Member** 並指定 account
+- 不建立 Bypass 或 Everyone policy
+
+不要保護整個 hostname，否則 `/api/ddns/*` 會被互動式登入攔截。記下 Application AUD tag，稍後存為 `ACCESS_AUD`。正式管理入口是 `https://APP_HOST/admin/`；裸 `/admin` 會先重新導向 `/admin/`。
+
+### 6. 建立 DNS API Token 並設定 runtime secrets
 
 Cloudflare Dashboard → My Profile → API Tokens → Create Custom Token：
 
 - Permission：Zone / DNS / Edit
 - Zone Resources：Include / Specific zone / 只選實際使用 zone
-- 可加 client IP filter 與期限
+- 視需求加 client IP filter 與期限
 
-不要使用 Global API Key。不要把 token 寫入 Git、D1 或前端；以 Wrangler secret 設定：
+不要使用 Global API Key。依序設定四個 Worker secrets：
 
 ```bash
 npx wrangler secret put CLOUDFLARE_DNS_API_TOKEN
 npx wrangler secret put ACCESS_TEAM_DOMAIN
 npx wrangler secret put ACCESS_AUD
 npx wrangler secret put ADMIN_ALLOWED_EMAILS
+npx wrangler secret list
 ```
 
-`ADMIN_ALLOWED_EMAILS` 是逗號分隔完整 email；不要用網域 wildcard。即使 team domain 本身通常不是 secret，本專案仍依安全基線以 secret 管理。
+`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`；`ADMIN_ALLOWED_EMAILS` 使用逗號分隔的完整 email，不接受網域 wildcard。`wrangler secret put` 會建立並立即部署新的 Worker version；四個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
 
-### 3. Cloudflare Access
+### 7. 綁定 Custom Domain 與 TLS
 
-Zero Trust → Settings → Authentication 啟用 **Cloudflare** identity provider，並啟用 restrict to account members。建立 Self-hosted application：
+Workers & Pages → 選擇 `cloudflare-ddns-gateway` → Settings → Domains & Routes，將 `APP_HOST` 關聯為唯一 Custom Domain。接著確認：
 
-- Domain/path：`ddns.example.com/admin/*`
-- Session duration：依風險選短時效（建議 8 小時以下）
-- Allow policy：Include 指定 Email；Require **Cloudflare Account Member** 並指定 account
-- 不建立 Bypass/Everyone policy
+- SSL/TLS mode：**Full (strict)**
+- Edge Certificates：**Always Use HTTPS** 已啟用
+- Access application path 仍只有 `APP_HOST/admin/*`
+- 沒有 Bypass policy
 
-將 Application AUD tag 存成 `ACCESS_AUD`。Worker 會再次驗證 `Cf-Access-Jwt-Assertion` 的 RS256 signature、issuer、audience、expiration 與 email allowlist。Account Member 是該 AUD 所屬 Access application 的 Require policy；Worker 以簽章與 AUD 綁定確保 assertion 來自該 application，不能只靠可偽造 header。管理驗證失敗統一 403。
+Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通過 Worker 與 Access JWT gate。限流使用同一個 D1 的固定窗口表：來源 IP 60/min、驗證後每 Client 10/min、每管理者 60/min。
 
-不要對整個 `ddns.example.com` 建立 Access application，否則設備更新也會被互動式登入攔截。只有 `/admin/*` 受 Access 保護；公開 `/api/ddns/*` 仍要求每個 Client 的獨立 Token。Worker 對所有管理請求再次驗證 JWT，因此即使 Access 邊界設定錯誤也不會公開管理頁或 API。
+### 8. 執行上線 smoke test
 
-管理介面的正式入口是 `https://ddns.example.com/admin/`。裸 `/admin` 只會在檢查 HTTPS 與 hostname 後重新導向 `/admin/`，讓 Cloudflare Access 的 `/admin/*` application path 接手登入流程。
+1. `https://APP_HOST/` 回傳 404。
+2. `https://APP_HOST/admin` 回傳 308 並導向 `/admin/`。
+3. `/admin/` 會觸發 Access 登入；非 member 或非 allowlist email 必須被拒絕。
+4. 登入後建立測試 Client，保存只顯示一次的 Client Token。
+5. 呼叫 `/api/ddns/{slug}`，確認回傳 `success:true`；首次可能是 `updated:true` 或 `updated:false`，相同 IP 再呼叫必須是 `updated:false`。
+6. 輪替 token，確認舊 token 回傳 401；停用 Client，確認有效 token 回傳 403。
+7. 若使用 UniFi，驗證 `/api/ddns/{slug}/unifi?hostname=` 回傳 `good <IP>` 或 `nochg <IP>`。
+8. 檢查 security headers，並確認 log 沒有 Authorization、JWT、cookie、token/hash 或 Cloudflare 原始錯誤。
 
-### 4. 單一 Custom Domain
+### 9. 連接 Cloudflare Git Build
 
-替換 `wrangler.jsonc` 的 `APP_HOST`。Custom Domain 由 Cloudflare Dashboard 手動關聯；設定檔刻意不包含 `routes`，避免後續 deploy 覆蓋 Dashboard 設定。預設只需要一個 Worker、一個 D1、一個 Custom Domain 與一個 Access application。部署：
+完成手動上線驗證後，到 Worker → Settings → Builds → Connect：
 
-```bash
-npm run deploy
-```
+1. 授權 Cloudflare Workers & Pages GitHub App 只存取此 repository。
+2. Production branch：`main`。
+3. Build command：`npm run build:frontend`。
+4. Deploy command：`npx wrangler deploy`。
+5. Root directory：`/`。
+6. 不需要 preview 時關閉 non-production branch builds。
 
-整個專案只有一個非敏感網域變數 `APP_HOST`。到 Domains & Routes 將該 hostname 關聯至 Worker；只設定變數不會建立 DNS、憑證或 Custom Domain，這些控制平面資源仍由 Dashboard 建立。
+Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime secrets；四個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
 
-Worker Static Assets 以 `run_worker_first` 保證 Vue 資產也先經 Worker 與 Access JWT gate。Cloudflare SSL/TLS mode 必須使用 **Full (strict)**，Edge Certificates 必須啟用 **Always Use HTTPS**；Worker 仍會在讀取 Authorization 前拒絕 custom domain 的明文 HTTP。限流全部使用同一個 D1 的固定窗口表：來源 IP pre-auth 60/min、驗證成功後每 Client 10/min、每管理者 60/min，不需要額外 Rate Limiting binding。
+### 10. 後續部署與回復
 
-此架構以 Workers Free、D1 Free 與 Zero Trust Free 額度為目標；網域註冊費不包含在內。Free plan 超過每日 Workers 或 D1 額度時服務可能暫停到額度重置，不應把免費額度視為 SLA。
+每次 push 前重跑步驟 1 的品質命令。若有 schema 變更，先備份並取得 Time Travel bookmark，在維護時段套用 migration，再部署相依程式碼。Worker regression 從 Cloudflare Deployments 回復上一版；資料問題依 bookmark 執行 Time Travel restore。
+
+此架構以 Workers Free、D1 Free 與 Zero Trust Free 額度為目標；網域費不包含在內，免費額度不可視為 SLA。完整回復注意事項見 [部署 Runbook](docs/deployment.md)。
 
 ## Client 操作
 
@@ -178,31 +235,6 @@ npm run build
 ```
 
 Vitest 覆蓋 Worker/Admin HTTP routes、token/hash/constant-time、Access JWT 偽造/audience/expiration、Cloudflare API mock、D1 repository、rate limit、IP family 與禁止範圍、header precedence、串流 body/content type/size、security headers、redaction、SQL/path/query injection、前端 Client payload 與 runtime URL。Coverage 對整個後端核心計算並強制 lines/functions/statements 90%、branches 85%；production 禁止以真實 token 當 fixture。
-
-## 本機驗證與 Cloudflare Git 部署
-
-Repository 不包含 GitHub Actions、Dependabot 或其他 GitHub 自動化。每次變更先在本機依序執行：
-
-```bash
-npm ci
-npm run lint
-npm run typecheck
-npm run test:coverage
-npm run build
-npm audit --audit-level=high
-```
-
-確認全部通過後，將 repository 從 Cloudflare Dashboard 手動關聯到 Worker：
-
-1. Workers & Pages → 選擇 Worker → Settings → Builds → Connect。
-2. 授權 Cloudflare Workers & Pages GitHub App 只存取此 repository。
-3. Production branch 選 `main`；不需要 preview 時關閉 non-production branch builds。
-4. Build command 設為 `npm run build:frontend`。
-5. Deploy command 設為 `npx wrangler deploy`。
-6. Root directory 保持 `/`。
-7. 首次 deploy 讓 Wrangler 建立 D1 後，以及每次 schema 變更時，由管理者在本機手動執行 `npm run db:migrate`。
-
-關聯後，Cloudflare Workers Builds 會在 `main` push 時建置及部署；這是 Cloudflare 管理的 Git integration，不需要 repository 內的 CI workflow。Client Token 與 Cloudflare DNS API Token 不得放進 GitHub repository、build variables 或部署輸出；Worker runtime secrets 必須在 Cloudflare Worker environment 設定。
 
 ## 備份、匯出與還原
 
