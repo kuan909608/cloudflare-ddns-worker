@@ -13,7 +13,7 @@ const records = ref<CloudflareRecordOption[]>([]);
 const error = ref('');
 const token = ref('');
 const ddnsOrigin = ref('');
-const dnsZoneName = ref('');
+const dnsZoneId = ref('');
 const initializing = ref(true);
 const saving = ref(false);
 
@@ -42,7 +42,7 @@ onMounted(async () => {
       props.id ? adminApi.client(props.id) : Promise.resolve(undefined),
     ]);
     ddnsOrigin.value = config.ddnsOrigin;
-    dnsZoneName.value = config.dnsZoneName;
+    dnsZoneId.value = config.dnsZoneId;
     records.value = availableRecords;
     if (existing) {
       Object.assign(form, toClientInput(existing));
@@ -51,7 +51,7 @@ onMounted(async () => {
     const message = cause instanceof Error ? cause.message : '';
     error.value = message && !['Internal server error', 'DNS update failed'].includes(message)
       ? message
-      : '無法載入固定 DNS Zone，請確認 Worker 已設定 DNS_ZONE_ID、DNS_ZONE_NAME，且 API Token 具備 DNS Edit 權限。';
+      : '無法載入固定 DNS Zone，請確認 Worker 已設定 DNS_ZONE_ID，且 API Token 具備 DNS Edit 權限。';
   } finally {
     initializing.value = false;
   }
@@ -127,7 +127,7 @@ function close() {
           <div class="form-grid">
             <div class="field field--full">
               <span class="label">固定 Zone</span>
-              <div class="selection-summary"><div><strong>{{ dnsZoneName || '正在讀取設定…' }}</strong><span>由 Worker runtime variables 管理，Client 無法變更</span></div><span class="type-chip">LOCKED</span></div>
+              <div class="selection-summary"><div><strong class="break-all">{{ dnsZoneId || '正在讀取設定…' }}</strong><span>Cloudflare Zone ID 由 Worker 固定，Client 無法變更</span></div><span class="type-chip">LOCKED</span></div>
             </div>
 
             <div class="field">

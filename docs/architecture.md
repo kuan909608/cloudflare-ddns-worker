@@ -25,7 +25,7 @@ flowchart LR
 - `middleware`: Access、rate limit、安全標頭與 body policy。
 - `services` / `utils`: token、IP、redaction 等無狀態能力。
 
-Worker 是無狀態協調層。每個部署以 `DNS_ZONE_ID`、`DNS_ZONE_NAME` 固定唯一 Cloudflare Zone；Client request 不接受 Zone 欄位。D1 是 Client 設定、狀態與 audit 的唯一資料來源；DNS 現況以 Cloudflare API 為準。新增 Client 不需部署。
+Worker 是無狀態協調層。每個部署以 `DNS_ZONE_ID` 固定唯一 Cloudflare Zone，Zone Name 採用 Cloudflare Record API 的權威回傳值；Client request 不接受 Zone 欄位。D1 是 Client 設定、狀態與 audit 的唯一資料來源；DNS 現況以 Cloudflare API 為準。新增 Client 不需部署。
 
 ## 安全決策
 

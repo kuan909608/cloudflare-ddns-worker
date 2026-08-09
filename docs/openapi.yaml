@@ -80,7 +80,7 @@ components:
   schemas:
     UpdateResult: { type: object, required: [success, updated], properties: { success: { const: true }, updated: { type: boolean } } }
     ClientInput: { type: object, additionalProperties: false, required: [displayName, slug, recordId, recordName, recordType], properties: { displayName: { type: string }, slug: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
-    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, dnsZoneName, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, dnsZoneName: { type: string }, unifiCompatibilityEnabled: { type: boolean } } } } }
+    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, dnsZoneId, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, dnsZoneId: { type: string, pattern: '^[0-9a-f]{32}$' }, unifiCompatibilityEnabled: { type: boolean } } } } }
     Error: { type: object, required: [success, message], properties: { success: { const: false }, message: { type: string } } }
   responses:
     Unauthorized: { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { success: false, message: Unauthorized } } } }

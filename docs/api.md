@@ -22,7 +22,7 @@ Admin API 只接受 Access 驗證後的使用者。所有 POST/PUT/DELETE 僅接
 
 `GET /admin/api/config` 只回傳非敏感 runtime 設定，管理頁用同源 origin 產生 DDNS、curl 與 UniFi URL。Client list/detail 的 `currentDnsIp` 由 Cloudflare DNS API 即時取得；`lastIp` 仍代表最後一次 Gateway 更新狀態。Dashboard 的 recent success/failure 是最近 24 小時 `update_logs` 事件數。
 
-Cloudflare catalog route 只列出 Worker runtime variables `DNS_ZONE_ID`、`DNS_ZONE_NAME` 所固定 Zone 內的 A/AAAA records。Create/Update payload 不接受 Zone 欄位，後端會注入並驗證固定 Zone；API Token 只需 `Zone / DNS / Edit`。
+Cloudflare catalog route 只列出 Worker runtime variable `DNS_ZONE_ID` 所固定 Zone 內的 A/AAAA records。Create/Update payload 不接受 Zone 欄位；後端會注入固定 Zone ID，並採用 Cloudflare Record API 回傳的 Zone Name。API Token 只需 `Zone / DNS / Edit`。
 
 非 localhost 的 HTTP request 會在解析 Authorization 前以 400 拒絕。DDNS 先按可信 `CF-Connecting-IP` 套用 60/min pre-auth limiter，再於 Token 成功後套用每 Client 10/min limiter；未知 slug 與錯誤 Token 不會消耗合法 Client bucket。
 

@@ -4,9 +4,9 @@ import type { Client } from '../src/domain/models';
 import type { ClientRepository } from '../src/repositories/client-repository';
 import type { DnsRecordGateway } from '../src/repositories/dns-record-gateway';
 
-const zone = { id:'1'.repeat(32), name:'example.com' };
+const zone = { id:'1'.repeat(32) };
 const client: Client = {
-  id:'client', displayName:'Home', slug:'home', enabled:true, zoneId:zone.id, zoneName:zone.name,
+  id:'client', displayName:'Home', slug:'home', enabled:true, zoneId:zone.id, zoneName:'example.com',
   recordId:'2'.repeat(32), recordName:'home.example.com', recordType:'A', tokenHash:'hash', tokenCreatedAt:'now',
   lastIp:'1.1.1.1', lastSourceIp:null, lastStatus:null, lastUpdatedAt:null, createdAt:'now', updatedAt:'now',
 };
@@ -17,7 +17,7 @@ function repository(): ClientRepository {
 }
 
 function record(overrides = {}) {
-  return { id:client.recordId, zoneId:zone.id, zoneName:zone.name, name:client.recordName, type:'A' as const, content:'8.8.8.8', ttl:1, ...overrides };
+  return { id:client.recordId, zoneId:zone.id, zoneName:'example.com', name:client.recordName, type:'A' as const, content:'8.8.8.8', ttl:1, ...overrides };
 }
 
 describe('admin client details', () => {
@@ -43,14 +43,14 @@ describe('admin client details', () => {
     const repo=repository();vi.mocked(repo.create).mockResolvedValue({...client,lastIp:null});
     const dns: DnsRecordGateway={getRecord:vi.fn(async()=>record()),update:vi.fn()};
     await expect(new AdminClientsUseCase(repo,dns,zone).create(input)).resolves.toMatchObject({client:{lastIp:null,currentDnsIp:'8.8.8.8'}});
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({zoneId:zone.id,zoneName:zone.name}));
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({zoneId:zone.id,zoneName:'example.com'}));
   });
 
   it('injects the fixed Zone when editing a Client', async () => {
     const repo=repository();vi.mocked(repo.update).mockResolvedValue(client);
     const dns: DnsRecordGateway={getRecord:vi.fn(async()=>record()),update:vi.fn()};
     await new AdminClientsUseCase(repo,dns,zone).update(client.id,input);
-    expect(repo.update).toHaveBeenCalledWith(client.id,expect.objectContaining({zoneId:zone.id,zoneName:zone.name}));
+    expect(repo.update).toHaveBeenCalledWith(client.id,expect.objectContaining({zoneId:zone.id,zoneName:'example.com'}));
   });
 
   it('returns live DNS content for the client list without substituting cached lastIp', async () => {

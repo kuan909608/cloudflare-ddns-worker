@@ -16,10 +16,9 @@ const idPattern = '[0-9a-fA-F-]{36}';
 const isAdminPath = (pathname: string): boolean => pathname === '/admin' || pathname.startsWith('/admin/');
 const configuredDnsZone = (env: Env) => ({
   id: env.DNS_ZONE_ID?.trim().toLowerCase() ?? '',
-  name: env.DNS_ZONE_NAME?.trim().toLowerCase() ?? '',
 });
-const requireFixedDnsZone = (zone: { id: string; name: string }) => {
-  if (!/^[0-9a-f]{32}$/u.test(zone.id) || !/^(?=.{3,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])$/u.test(zone.name)) throw errors.dnsZoneNotConfigured();
+const requireFixedDnsZone = (zone: { id: string }) => {
+  if (!/^[0-9a-f]{32}$/u.test(zone.id)) throw errors.dnsZoneNotConfigured();
   return zone;
 };
 
@@ -73,7 +72,7 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   const clientMatch = url.pathname.match(new RegExp(`^/admin/api/clients/(${idPattern})$`, 'u'));
   const actionMatch = url.pathname.match(new RegExp(`^/admin/api/clients/(${idPattern})/(enable|disable|rotate-token|logs)$`, 'u'));
   let response: Response;
-  if (url.pathname === '/admin/api/config' && request.method === 'GET') response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.APP_HOST}`, dnsZoneName:requireFixedDnsZone(zone).name, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' });
+  if (url.pathname === '/admin/api/config' && request.method === 'GET') response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.APP_HOST}`, dnsZoneId:requireFixedDnsZone(zone).id, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' });
   else if (url.pathname === '/admin/api/dashboard' && request.method === 'GET') response = success(await repository.dashboard());
   else if (listPath && request.method === 'GET') response = success(await useCase.list());
   else if (listPath && request.method === 'POST') { requireFixedDnsZone(zone); const result = await runAudited(repository, identity.email, 'client.create', async () => useCase.create(await strictJson(request)), (value) => value.client.id); response = success(result, 201); }

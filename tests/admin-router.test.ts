@@ -29,7 +29,7 @@ const client: Client = {
 };
 const record = { id:client.recordId, zoneId:client.zoneId, zoneName:client.zoneName, name:client.recordName, type:'A' as const, content:'8.8.8.8', ttl:1 };
 const env = {
-  ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', DNS_ZONE_ID:client.zoneId, DNS_ZONE_NAME:client.zoneName, ENABLE_UNIFI_COMPAT:'true',
+  ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', DNS_ZONE_ID:client.zoneId, ENABLE_UNIFI_COMPAT:'true',
   ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com', ACCESS_AUD:'aud',
   CLOUDFLARE_DNS_API_TOKEN:'secret', DDNS_DB:{} as D1Database,
   ASSETS:{ fetch:vi.fn(async () => new Response('asset')) },
@@ -106,7 +106,7 @@ describe('admin HTTP API', () => {
   });
 
   it('returns runtime config, dashboard, list, live detail and logs', async () => {
-    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net',dnsZoneName:'example.com'}});
+    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net',dnsZoneId:client.zoneId}});
     expect((await route(request('/admin/api/dashboard'), env)).status).toBe(200);
     expect((await route(request('/admin/api/clients'), env)).status).toBe(200);
     expect(await (await route(request(`/admin/api/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
@@ -144,7 +144,7 @@ describe('admin HTTP API', () => {
   });
 
   it('fails closed when the fixed DNS Zone is not configured', async () => {
-    const missingZoneEnv = { ...env, DNS_ZONE_ID:'', DNS_ZONE_NAME:'' } as unknown as Env;
+    const missingZoneEnv = { ...env, DNS_ZONE_ID:'' } as unknown as Env;
     expect(await (await route(request('/admin/api/config'),missingZoneEnv)).json()).toEqual({success:false,message:'DNS Zone is not configured'});
     expect((await route(request('/admin/api/dashboard'),missingZoneEnv)).status).toBe(200);
   });
