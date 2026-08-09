@@ -14,6 +14,7 @@
     "build:frontend": "vite build --config frontend/vite.config.ts",
     "build": "npm run build:frontend && wrangler deploy --dry-run --outdir dist-worker",
     "deploy": "npm run build:frontend && wrangler deploy",
+    "deploy:production": "npm run db:migrate && wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply DDNS_DB --local",
     "db:migrate": "wrangler d1 migrations apply DDNS_DB --remote"
   },

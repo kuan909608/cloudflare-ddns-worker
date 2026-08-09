@@ -151,15 +151,15 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 1. 授權 Cloudflare Workers & Pages GitHub App 只存取此 repository。
 2. Production branch：`main`。
 3. Build command：`npm run build:frontend`。
-4. Deploy command：`npx wrangler deploy`。
+4. Deploy command：`npm run deploy:production`。此指令會先套用遠端 D1 migration，成功後才部署 Worker。
 5. Root directory：`/`。
 6. 不需要 preview 時關閉 non-production branch builds。
 
-Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；六個非敏感 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
+Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；六個非敏感 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 時，production deploy 會先執行 `npm run db:migrate`；migration 失敗便中止，不會部署相依 Worker。首次 deploy 仍須依步驟 3、4 先建立 draft D1，再人工初始化 schema，因為 migration 執行前必須已有遠端 D1。
 
 ### 10. 後續部署與回復
 
-每次 push 前重跑步驟 1 的品質命令。若有 schema 變更，先備份並取得 Time Travel bookmark，在維護時段套用 migration，再部署相依程式碼。Worker regression 從 Cloudflare Deployments 回復上一版；資料問題依 bookmark 執行 Time Travel restore。
+每次 push 前重跑步驟 1 的品質命令。後續 schema 變更會由 `deploy:production` 在 Worker 部署前自動套用；Wrangler 會在每次 migration 建立備份。破壞性 schema 變更仍須先取得 Time Travel bookmark 並安排維護時段。Worker regression 從 Cloudflare Deployments 回復上一版；資料問題依 bookmark 執行 Time Travel restore。
 
 此架構以 Workers Free、D1 Free 與 Zero Trust Free 額度為目標；網域費不包含在內，免費額度不可視為 SLA。完整回復注意事項見 [部署 Runbook](docs/deployment.md)。
 
