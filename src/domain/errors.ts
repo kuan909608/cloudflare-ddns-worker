@@ -18,6 +18,7 @@ export const errors = {
   tooLarge: () => new AppError(413, 'Request body too large', 'BODY_TOO_LARGE'),
   unsupportedMedia: () => new AppError(415, 'Content-Type must be application/json', 'UNSUPPORTED_MEDIA_TYPE'),
   rateLimited: () => new AppError(429, 'Too many requests', 'RATE_LIMITED'),
+  databaseNotInitialized: () => new AppError(503, 'Database schema is not initialized', 'D1_SCHEMA_MISSING'),
   dnsFailure: () => new AppError(502, 'DNS update failed', 'DNS_UPDATE_FAILED'),
   dnsZoneNotConfigured: () => new AppError(500, 'DNS Zone is not configured', 'DNS_ZONE_NOT_CONFIGURED'),
 };

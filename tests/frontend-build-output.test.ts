@@ -13,5 +13,10 @@ describe('frontend production build', () => {
     for (const assetUrl of assetUrls) {
       await expect(access(resolve('dist', assetUrl.slice(1)))).resolves.toBeUndefined();
     }
+
+    const stylesheetUrl = assetUrls.find((url) => url.endsWith('.css'))!;
+    const stylesheet = await readFile(resolve('dist', stylesheetUrl.slice(1)), 'utf8');
+    expect(stylesheet).toContain('.grid{display:grid}');
+    expect(stylesheet).toContain('.gap-5{');
   });
 });
