@@ -30,7 +30,7 @@ const client: Client = {
 const record = { id:client.recordId, zoneId:client.zoneId, zoneName:client.zoneName, name:client.recordName, type:'A' as const, content:'8.8.8.8', ttl:1 };
 const env = {
   ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', ENABLE_UNIFI_COMPAT:'true',
-  ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com', ACCESS_AUD:'aud', ADMIN_ALLOWED_EMAILS:'admin@example.com',
+  ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com', ACCESS_AUD:'aud',
   CLOUDFLARE_DNS_API_TOKEN:'secret', DDNS_DB:{} as D1Database,
   ASSETS:{ fetch:vi.fn(async () => new Response('asset')) },
 } as unknown as Env;

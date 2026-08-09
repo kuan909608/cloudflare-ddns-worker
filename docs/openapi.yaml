@@ -7,7 +7,7 @@ servers:
   - { url: 'https://ddns.example.com', description: DDNS update and path-isolated Access administration }
 tags:
   - { name: DDNS }
-  - { name: Admin, description: Requires Cloudflare Access and an allowed administrator email. }
+  - { name: Admin, description: Requires an administrator authorized by the Cloudflare Access policy. }
 paths:
   /api/ddns/{clientSlug}:
     post:

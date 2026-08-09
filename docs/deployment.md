@@ -2,7 +2,7 @@
 
 1. 本機先驗證 migration；在 Worker Dashboard 設定正式 `APP_HOST` 等 runtime variables，再執行首次 deploy。`wrangler.jsonc` 不宣告 production `vars` 且使用 `keep_vars:true`，避免後續 Git 部署覆蓋 Dashboard 現值。Wrangler 會從 draft `DDNS_DB` binding 自動建立並綁定唯一 D1。此時不要關聯公開網域。
 2. 在尚未關聯公開網域時立即執行 `npm run db:migrate`，確認遠端 schema 完整後記下 Time Travel bookmark。
-3. 建立只涵蓋 `ddns.example.com/admin/*` 的 Access application，取得 AUD；建立最小權限 DNS API Token 並設定四個 Worker runtime secrets。
+3. 建立只涵蓋 `ddns.example.com/admin/*` 的 Access application，取得 AUD；建立最小權限 DNS API Token 並設定三個 Worker runtime secrets。
 4. 在 Dashboard 手動建立唯一的 Custom Domain；不要保護整個 hostname，並確認 Full (strict) 與 Always Use HTTPS。
 5. 完成 Access member/non-member 正負向測試、建立測試 Client、驗證 unchanged/update/rotate/disable。
 6. 在 Cloudflare Worker 的 Settings → Builds 手動連結 GitHub repository，production branch 選 `main`，Build command 使用 `npm run build:frontend`，Deploy command 使用 `npx wrangler deploy`。

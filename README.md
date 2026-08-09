@@ -110,17 +110,16 @@ Cloudflare Dashboard → My Profile → API Tokens → Create Custom Token：
 - Zone Resources：Include / Specific zone / 只選實際使用 zone
 - 視需求加 client IP filter 與期限
 
-不要使用 Global API Key。依序設定四個 Worker secrets：
+不要使用 Global API Key。依序設定三個 Worker secrets：
 
 ```bash
 npx wrangler secret put CLOUDFLARE_DNS_API_TOKEN
 npx wrangler secret put ACCESS_TEAM_DOMAIN
 npx wrangler secret put ACCESS_AUD
-npx wrangler secret put ADMIN_ALLOWED_EMAILS
 npx wrangler secret list
 ```
 
-`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`；`ADMIN_ALLOWED_EMAILS` 使用逗號分隔的完整 email，不接受網域 wildcard。`wrangler.jsonc` 的 `secrets.required` 只預留這四個必要名稱，不包含或覆蓋 secret 值；缺少任一項時 Wrangler 會阻止後續部署並列出缺少名稱。`wrangler secret put` 會建立並立即部署新的 Worker version；四個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
+`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`。管理者 Email allowlist 只由 Cloudflare Access policy 維護，Worker 不保留第二份名單；Worker 仍驗證 JWT 的 signature、issuer、audience、expiration、type 與 email identity。`wrangler.jsonc` 的 `secrets.required` 只預留這三個必要名稱，不包含或覆蓋 secret 值；缺少任一項時 Wrangler 會阻止後續部署並列出缺少名稱。`wrangler secret put` 會建立並立即部署新的 Worker version；三個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
 
 ### 7. 綁定 Custom Domain 與 TLS
 
@@ -137,7 +136,7 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 
 1. `https://APP_HOST/` 回傳 404。
 2. `https://APP_HOST/admin` 回傳 308 並導向 `/admin/`。
-3. `/admin/` 會觸發 Access 登入；非 member 或非 allowlist email 必須被拒絕。
+3. `/admin/` 會觸發 Access 登入；Access policy 必須拒絕非 member 或非 allowlist email。
 4. 登入後建立測試 Client，保存只顯示一次的 Client Token。
 5. 呼叫 `/api/ddns/{slug}`，確認回傳 `success:true`；首次可能是 `updated:true` 或 `updated:false`，相同 IP 再呼叫必須是 `updated:false`。
 6. 輪替 token，確認舊 token 回傳 401；停用 Client，確認有效 token 回傳 403。
@@ -155,7 +154,7 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 5. Root directory：`/`。
 6. 不需要 preview 時關閉 non-production branch builds。
 
-Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；五個非敏感 runtime variables 與四個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
+Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；五個非敏感 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
 
 ### 10. 後續部署與回復
 
@@ -275,7 +274,7 @@ npx wrangler tail cloudflare-ddns-gateway --format pretty
 
 - `401 Unauthorized`：token 缺漏/錯誤/已輪替；不要把 Authorization 貼進 log。
 - UniFi 相容端點 `404`：確認該環境沒有把 `ENABLE_UNIFI_COMPAT` 改為 `false`，且使用的是正確 DDNS hostname。
-- `403 Client disabled`：由 Access 管理頁啟用；Admin 的 403 則檢查 Access AUD、team domain 與 email allowlist。
+- `403 Client disabled`：由 Access 管理頁啟用；Admin 的 403 則檢查 Access JWT 與由 Access policy 管理的 Email allowlist。
 - `400 No valid public source IP`：record family 不符、CGNAT/private/link-local，或不是經 Cloudflare custom domain 呼叫。`ALLOW_PRIVATE_IPS` 預設 false；開啟時只額外允許 RFC1918/IPv6 ULA，loopback、unspecified、link-local、multicast 等仍永久拒絕，不建議 production 開啟。
 - `409`：slug、record ID 或 record name 已綁定。
 - `502`：DNS token scope、zone/record 綁定或 Cloudflare API 問題；Client response 刻意不含上游細節。

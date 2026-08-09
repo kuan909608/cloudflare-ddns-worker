@@ -6,7 +6,7 @@
 | DNS API Token 外洩 | 指定 zone DNS 可被全面修改 | Worker secret、Specific Zone + DNS Edit、redaction、定期輪替 | Cloudflare 帳戶/Worker 管理權遭入侵時仍可能取得能力 |
 | Access 帳號遭入侵 | 可管理所有 clients | Account Member + email 雙重 allowlist、IdP MFA、Access session 限制、audit | 有效 session 期間仍具管理權 |
 | 管理頁 XSS | 可代管理者呼叫 API 或讀取一次性 token | 嚴格 CSP、Vue escaping、無 unsafe-inline/eval、無 token persistence、供應鏈掃描 | 同源依賴被植入仍可能執行 |
-| 管理 API 權限繞過 | 未授權管理 DNS 綁定 | Edge Access + Worker 驗 JWT signature/iss/aud/exp/email、403 fail closed | Access/JWKS 平台失陷 |
+| 管理 API 權限繞過 | 未授權管理 DNS 綁定 | Access policy 管理 Email allowlist；Worker 驗 JWT signature/iss/aud/exp/type/email identity、403 fail closed | Access/JWKS 平台失陷 |
 | D1 資料外洩 | Client metadata、IP、token hashes 外洩 | 無明文 secret、最小管理權、備份加密、retention | IP/metadata 與 hash 仍屬敏感；弱 token 不適用（本系統為高熵） |
 | 重放攻擊 | 竊得的 Bearer request 可重送 | Worker 拒絕明文 HTTP、Cloudflare Always Use HTTPS、rate limit、來源 IP 只能更新成 edge observed IP、token rotation | Bearer token 本質不具 nonce；同一 NAT 攻擊仍可能重放 |
 | 暴力破解 | 猜測 client token、隨機 slug 消耗 D1，或錯誤 Token 排擠合法更新 | 256-bit entropy、constant-time hash compare、來源 IP pre-auth 60/min、驗證後 per-client 10/min、統一 401 | 分散式低速掃描仍可能消耗 Worker 資源 |
@@ -19,4 +19,4 @@
 
 ## 資產與安全目標
 
-最高敏感資產是 DNS API token、Access identity、Client token。核心目標是：任何 Client 最多只能把自己綁定的 A/AAAA record 更新為 Cloudflare edge 確認的來源 IP；任何管理動作必須可歸因到驗證過且在 allowlist 的 email。
+最高敏感資產是 DNS API token、Access identity、Client token。核心目標是：任何 Client 最多只能把自己綁定的 A/AAAA record 更新為 Cloudflare edge 確認的來源 IP；任何管理動作必須可歸因到經 Access policy 授權且由 Worker 驗證 JWT identity 的 email。

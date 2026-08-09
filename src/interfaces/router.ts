@@ -53,7 +53,7 @@ async function unifiCompat(request: Request, env: Env, url: URL, slug: string): 
 }
 
 async function admin(request: Request, env: Env, url: URL): Promise<Response> {
-  const identity = await verifyAccess(request, env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD, env.ADMIN_ALLOWED_EMAILS);
+  const identity = await verifyAccess(request, env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD);
   if (!url.pathname.startsWith('/admin/api/')) {
     if (!['GET', 'HEAD'].includes(request.method)) throw errors.notFound();
     const assetResponse = await env.ASSETS.fetch(request);

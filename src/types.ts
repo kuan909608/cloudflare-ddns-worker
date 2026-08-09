@@ -4,7 +4,6 @@ export interface Env {
   CLOUDFLARE_DNS_API_TOKEN: string;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
-  ADMIN_ALLOWED_EMAILS: string;
   ENVIRONMENT: string;
   APP_HOST: string;
   ALLOW_PRIVATE_IPS?: string;

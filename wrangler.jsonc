@@ -9,8 +9,7 @@
     "required": [
       "CLOUDFLARE_DNS_API_TOKEN",
       "ACCESS_TEAM_DOMAIN",
-      "ACCESS_AUD",
-      "ADMIN_ALLOWED_EMAILS"
+      "ACCESS_AUD"
     ]
   },
   "observability": {
