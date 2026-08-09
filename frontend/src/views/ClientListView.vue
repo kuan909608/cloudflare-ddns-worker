@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import StatusBadge from '../components/StatusBadge.vue';
+import { formatLocalDateTime } from '../services/date-time';
 import { useClientsStore } from '../stores/clients';
 const store = useClientsStore();
 onMounted(store.load);
@@ -21,7 +22,7 @@ onMounted(store.load);
       <div v-else class="overflow-x-auto">
         <table class="data-table">
           <thead><tr><th>Client</th><th>DNS Record</th><th>目前 IP</th><th>狀態</th><th>最後更新</th><th>來源 IP</th><th>結果</th></tr></thead>
-          <tbody><tr v-for="client in store.clients" :key="client.id"><td><RouterLink class="font-semibold text-emerald-300 no-underline" :to="`/clients/${client.id}`">{{ client.displayName }}</RouterLink><div class="mt-1 text-xs text-slate-500">{{ client.slug }}</div></td><td>{{ client.recordName }}<div class="mt-1 text-xs text-slate-500">{{ client.recordType }}{{ client.recordPending ? ' · PENDING' : '' }}</div></td><td class="font-mono">{{ client.recordPending ? '待首次更新' : client.currentDnsIp ?? '—' }}</td><td><StatusBadge :value="client.enabled" /></td><td>{{ client.lastUpdatedAt ?? '—' }}</td><td class="font-mono">{{ client.lastSourceIp ?? '—' }}</td><td><StatusBadge :value="client.lastStatus" /></td></tr></tbody>
+          <tbody><tr v-for="client in store.clients" :key="client.id"><td><RouterLink class="font-semibold text-emerald-300 no-underline" :to="`/clients/${client.id}`">{{ client.displayName }}</RouterLink><div class="mt-1 text-xs text-slate-500">{{ client.slug }}</div></td><td>{{ client.recordName }}<div class="mt-1 text-xs text-slate-500">{{ client.recordType }}{{ client.recordPending ? ' · PENDING' : '' }}</div></td><td class="font-mono">{{ client.recordPending ? '待首次更新' : client.currentDnsIp ?? '—' }}</td><td><StatusBadge :value="client.enabled" /></td><td><time v-if="client.lastUpdatedAt" :datetime="client.lastUpdatedAt">{{ formatLocalDateTime(client.lastUpdatedAt) }}</time><span v-else>—</span></td><td class="font-mono">{{ client.lastSourceIp ?? '—' }}</td><td><StatusBadge :value="client.lastStatus" /></td></tr></tbody>
         </table>
       </div>
     </section>

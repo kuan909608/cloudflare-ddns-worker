@@ -5,6 +5,7 @@ import StatusBadge from '../components/StatusBadge.vue';
 import TokenModal from '../components/TokenModal.vue';
 import { adminApi } from '../services/api';
 import { curlCommand, ddnsUpdateUrl, unifiSettings } from '../services/connection-details';
+import { formatLocalDateTime } from '../services/date-time';
 import type { Client, UpdateLog } from '../types';
 
 const props = defineProps<{ id: string }>();
@@ -75,7 +76,7 @@ async function copy(value: string) {
             <button class="btn-secondary" @click="copy(curlCommand(ddnsOrigin, client.slug, '&lt;CLIENT_TOKEN&gt;'))">複製 curl</button>
             <button class="btn-secondary" @click="copy(unifiSettings(ddnsOrigin, client.slug, client.recordName, '&lt;CLIENT_TOKEN&gt;'))">複製 UniFi</button>
           </div>
-          <p class="detail-note">Token 已設定 · 建立於 {{ client.tokenCreatedAt }}</p>
+          <p class="detail-note">Token 已設定 · 建立於 <time :datetime="client.tokenCreatedAt">{{ formatLocalDateTime(client.tokenCreatedAt) }}</time></p>
         </div>
       </section>
       <section class="surface">
@@ -95,7 +96,7 @@ async function copy(value: string) {
       <div class="overflow-x-auto">
         <table class="data-table">
           <thead><tr><th>時間</th><th>來源</th><th>舊 IP</th><th>新 IP</th><th>結果</th></tr></thead>
-          <tbody><tr v-for="log in logs" :key="log.id"><td>{{ log.createdAt }}</td><td>{{ log.sourceIp }}</td><td>{{ log.oldIp ?? '—' }}</td><td>{{ log.newIp }}</td><td>{{ log.status }}</td></tr></tbody>
+          <tbody><tr v-for="log in logs" :key="log.id"><td><time :datetime="log.createdAt">{{ formatLocalDateTime(log.createdAt) }}</time></td><td>{{ log.sourceIp }}</td><td>{{ log.oldIp ?? '—' }}</td><td>{{ log.newIp }}</td><td>{{ log.status }}</td></tr></tbody>
         </table>
       </div>
     </section>
