@@ -5,6 +5,14 @@
   "compatibility_date": "2026-07-25",
   "workers_dev": false,
   "keep_vars": true,
+  "secrets": {
+    "required": [
+      "CLOUDFLARE_DNS_API_TOKEN",
+      "ACCESS_TEAM_DOMAIN",
+      "ACCESS_AUD",
+      "ADMIN_ALLOWED_EMAILS"
+    ]
+  },
   "observability": {
     "enabled": true,
     "logs": {

@@ -120,7 +120,7 @@ npx wrangler secret put ADMIN_ALLOWED_EMAILS
 npx wrangler secret list
 ```
 
-`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`；`ADMIN_ALLOWED_EMAILS` 使用逗號分隔的完整 email，不接受網域 wildcard。`wrangler secret put` 會建立並立即部署新的 Worker version；四個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
+`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`；`ADMIN_ALLOWED_EMAILS` 使用逗號分隔的完整 email，不接受網域 wildcard。`wrangler.jsonc` 的 `secrets.required` 只預留這四個必要名稱，不包含或覆蓋 secret 值；缺少任一項時 Wrangler 會阻止後續部署並列出缺少名稱。`wrangler secret put` 會建立並立即部署新的 Worker version；四個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
 
 ### 7. 綁定 Custom Domain 與 TLS
 
