@@ -10,14 +10,14 @@ const mocks = vi.hoisted(() => ({
     list:vi.fn(), findById:vi.fn(), findBySlug:vi.fn(), create:vi.fn(), update:vi.fn(), setEnabled:vi.fn(),
     rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
   },
-  getRecord: vi.fn(),
+  getRecord: vi.fn(), listZones:vi.fn(), listRecords:vi.fn(),
   updateRecord: vi.fn(),
 }));
 
 vi.mock('../src/services/access-service', () => ({ verifyAccess:mocks.verifyAccess }));
 vi.mock('../src/middleware/rate-limit', () => ({ enforceRateLimit:mocks.enforceRateLimit }));
 vi.mock('../src/infrastructure/d1-client-repository', () => ({ D1ClientRepository:class { constructor() { return mocks.repository; } } }));
-vi.mock('../src/services/cloudflare-dns-service', () => ({ CloudflareDnsService:class { getRecord=mocks.getRecord; update=mocks.updateRecord; } }));
+vi.mock('../src/services/cloudflare-dns-service', () => ({ CloudflareDnsService:class { getRecord=mocks.getRecord; listZones=mocks.listZones; listRecords=mocks.listRecords; update=mocks.updateRecord; } }));
 
 import { route } from '../src/interfaces/router';
 
@@ -57,6 +57,8 @@ beforeEach(() => {
   mocks.repository.create.mockResolvedValue(client);
   mocks.repository.audit.mockResolvedValue(undefined);
   mocks.getRecord.mockResolvedValue(record);
+  mocks.listZones.mockResolvedValue([{id:client.zoneId,name:client.zoneName}]);
+  mocks.listRecords.mockResolvedValue([{id:client.recordId,name:client.recordName,type:client.recordType,content:record.content}]);
 });
 
 describe('admin HTTP API', () => {
@@ -110,6 +112,13 @@ describe('admin HTTP API', () => {
     expect(await (await route(request(`/admin/api/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
     expect((await route(request(`/admin/api/clients/${id}/logs?limit=25&offset=0`), env)).status).toBe(200);
     expect(mocks.repository.logs).toHaveBeenCalledWith(id,25,0);
+  });
+
+  it('lists Cloudflare zones and A/AAAA records for the guided client form', async () => {
+    expect(await (await route(request('/admin/api/cloudflare/zones'), env)).json()).toMatchObject({data:[{name:'example.com'}]});
+    const zoneId = 'a'.repeat(32);
+    expect(await (await route(request(`/admin/api/cloudflare/zones/${zoneId}/records`), env)).json()).toMatchObject({data:[{type:'A'}]});
+    expect(mocks.listRecords).toHaveBeenCalledWith(zoneId);
   });
 
   it('creates, updates, deletes, enables, disables and rotates with JSON mutation policy', async () => {

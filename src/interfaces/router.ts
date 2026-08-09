@@ -63,10 +63,11 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   }
   await enforceRateLimit(env.DDNS_DB, `admin:${identity.email}`, 60);
   if (['POST', 'PUT', 'DELETE'].includes(request.method)) enforceSameOrigin(request, url.hostname);
-  const repository = new D1ClientRepository(env.DDNS_DB); const useCase = new AdminClientsUseCase(repository, new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN));
+  const repository = new D1ClientRepository(env.DDNS_DB); const dns = new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN); const useCase = new AdminClientsUseCase(repository, dns);
   const listPath = url.pathname === '/admin/api/clients';
   const clientMatch = url.pathname.match(new RegExp(`^/admin/api/clients/(${idPattern})$`, 'u'));
   const actionMatch = url.pathname.match(new RegExp(`^/admin/api/clients/(${idPattern})/(enable|disable|rotate-token|logs)$`, 'u'));
+  const zoneRecordsMatch = url.pathname.match(/^\/admin\/api\/cloudflare\/zones\/([0-9a-f]{32})\/records$/u);
   let response: Response;
   if (url.pathname === '/admin/api/config' && request.method === 'GET') response = success({ ddnsOrigin: ['localhost', '127.0.0.1'].includes(url.hostname) ? url.origin : `https://${env.APP_HOST}`, unifiCompatibilityEnabled: env.ENABLE_UNIFI_COMPAT === 'true' });
   else if (url.pathname === '/admin/api/dashboard' && request.method === 'GET') response = success(await repository.dashboard());
@@ -80,7 +81,9 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     const [id, action] = [actionMatch[1]!, actionMatch[2]!];
     if (action === 'rotate-token') { const result = await runAudited(repository, identity.email, 'client.rotate-token', async () => { await strictEmptyJson(request); return useCase.rotate(id); }, () => id, id); response = success(result); }
     else { const result = await runAudited(repository, identity.email, `client.${action}`, async () => { await strictEmptyJson(request); const changed = await repository.setEnabled(id, action === 'enable'); if (!changed) throw errors.notFound(); return useCase.get(id); }, () => id, id); response = success(result); }
-  } else if (url.pathname === '/admin/api/cloudflare/validate-record' && request.method === 'POST') { const record = await runAudited(repository, identity.email, 'cloudflare.validate-record', async () => useCase.validate(await strictJson(request)), () => null); response = success(record); }
+  } else if (url.pathname === '/admin/api/cloudflare/zones' && request.method === 'GET') response = success(await dns.listZones());
+  else if (zoneRecordsMatch && request.method === 'GET') response = success(await dns.listRecords(zoneRecordsMatch[1]!));
+  else if (url.pathname === '/admin/api/cloudflare/validate-record' && request.method === 'POST') { const record = await runAudited(repository, identity.email, 'cloudflare.validate-record', async () => useCase.validate(await strictJson(request)), () => null); response = success(record); }
   else throw errors.notFound();
   return response;
 }

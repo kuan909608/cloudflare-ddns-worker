@@ -1,1 +1,32 @@
-<template><div class="min-h-screen"><header class="border-b border-slate-800 bg-slate-900"><div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4"><RouterLink to="/" class="text-lg font-bold text-emerald-400">DDNS Gateway</RouterLink><nav class="flex gap-2"><RouterLink class="btn-secondary" to="/">Dashboard</RouterLink><RouterLink class="btn-secondary" to="/clients">Clients</RouterLink><RouterLink class="btn-primary" to="/clients/new">新增 Client</RouterLink></nav></div></header><main class="mx-auto max-w-7xl p-6"><RouterView/></main></div></template>
+<script setup lang="ts">
+const navigation = [
+  { label:'總覽', to:'/' },
+  { label:'Clients', to:'/clients' },
+];
+</script>
+
+<template>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <RouterLink to="/" class="brand" aria-label="DDNS Gateway 首頁">
+          <span class="brand-mark" aria-hidden="true"><span /></span>
+          <span><strong>DDNS Gateway</strong><small>Cloudflare control plane</small></span>
+        </RouterLink>
+        <nav class="app-nav" aria-label="主要導覽">
+          <RouterLink v-for="item in navigation" :key="item.to" class="nav-link" :to="item.to" exact-active-class="nav-link--active">
+            {{ item.label }}
+          </RouterLink>
+        </nav>
+        <RouterLink class="btn-primary header-action" to="/clients/new">新增 Client</RouterLink>
+      </div>
+    </header>
+    <main class="app-main">
+      <RouterView v-slot="{ Component }">
+        <Transition name="page-fade">
+          <component :is="Component" />
+        </Transition>
+      </RouterView>
+    </main>
+  </div>
+</template>

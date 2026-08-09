@@ -51,37 +51,51 @@ async function copy(value: string) {
 </script>
 
 <template>
-  <div v-if="client">
-    <div class="mb-6 flex flex-wrap items-center gap-2">
-      <h1 class="mr-auto text-2xl font-bold">{{ client.displayName }}</h1>
-      <RouterLink class="btn-secondary" :to="`/clients/${id}/edit`">編輯</RouterLink>
-      <button class="btn-secondary" @click="toggle">{{ client.enabled ? '停用' : '啟用' }}</button>
-      <button class="btn-secondary" @click="rotate">輪替 Token</button>
-      <button class="btn-danger" @click="remove">刪除</button>
-    </div>
+  <div v-if="client" class="page">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Client detail</p>
+        <h1 class="page-title">{{ client.displayName }}</h1>
+        <p class="page-description">{{ client.recordName }} · {{ client.recordType }} Record</p>
+      </div>
+      <div class="action-group">
+        <RouterLink class="btn-secondary" :to="`/clients/${id}/edit`">編輯</RouterLink>
+        <button class="btn-secondary" @click="toggle">{{ client.enabled ? '停用' : '啟用' }}</button>
+        <button class="btn-secondary" @click="rotate">輪替 Token</button>
+        <button class="btn-danger" @click="remove">刪除</button>
+      </div>
+    </header>
     <div class="grid gap-4 lg:grid-cols-2">
-      <section class="card space-y-3">
-        <h2 class="font-bold">連線資訊</h2>
-        <div><span class="text-slate-400">DDNS URL</span><code class="mt-1 block break-all">{{ url }}</code></div>
-        <button class="btn-secondary" @click="copy(url)">複製 URL</button>
-        <button class="btn-secondary" @click="copy(curlCommand(ddnsOrigin, client.slug, '&lt;CLIENT_TOKEN&gt;'))">複製 curl 範例</button>
-        <button class="btn-secondary" @click="copy(unifiSettings(ddnsOrigin, client.slug, client.recordName, '&lt;CLIENT_TOKEN&gt;'))">複製 UniFi 設定</button>
-        <p>Token：已設定（建立於 {{ client.tokenCreatedAt }}）</p>
+      <section class="surface">
+        <div class="surface-body space-y-4">
+          <div><p class="eyebrow">Connection</p><h2 class="section-title mt-1">連線資訊</h2></div>
+          <div class="field"><span class="label">DDNS URL</span><code class="code-block">{{ url }}</code></div>
+          <div class="action-group">
+            <button class="btn-secondary" @click="copy(url)">複製 URL</button>
+            <button class="btn-secondary" @click="copy(curlCommand(ddnsOrigin, client.slug, '&lt;CLIENT_TOKEN&gt;'))">複製 curl</button>
+            <button class="btn-secondary" @click="copy(unifiSettings(ddnsOrigin, client.slug, client.recordName, '&lt;CLIENT_TOKEN&gt;'))">複製 UniFi</button>
+          </div>
+          <p class="detail-note">Token 已設定 · 建立於 {{ client.tokenCreatedAt }}</p>
+        </div>
       </section>
-      <section class="card space-y-2">
-        <h2 class="font-bold">DNS Record</h2>
-        <p>{{ client.recordName }} · {{ client.recordType }}</p>
-        <p>目前 IP：{{ client.currentDnsIp ?? '—' }}</p>
-        <p>來源 IP：{{ client.lastSourceIp ?? '—' }}</p>
-        <p>狀態：<StatusBadge :value="client.enabled" /> <StatusBadge :value="client.lastStatus" /></p>
+      <section class="surface">
+        <div class="surface-body space-y-4">
+          <div><p class="eyebrow">Cloudflare DNS</p><h2 class="section-title mt-1">綁定狀態</h2></div>
+          <dl class="detail-list">
+            <div><dt>Record</dt><dd>{{ client.recordName }} <span class="type-chip">{{ client.recordType }}</span></dd></div>
+            <div><dt>目前 IP</dt><dd>{{ client.currentDnsIp ?? '—' }}</dd></div>
+            <div><dt>最後來源 IP</dt><dd>{{ client.lastSourceIp ?? '—' }}</dd></div>
+            <div><dt>狀態</dt><dd class="flex flex-wrap gap-2"><StatusBadge :value="client.enabled" /><StatusBadge :value="client.lastStatus" /></dd></div>
+          </dl>
+        </div>
       </section>
     </div>
-    <section class="card mt-4">
-      <h2 class="mb-3 font-bold">最近更新紀錄</h2>
+    <section class="surface overflow-hidden">
+      <div class="surface-body pb-3"><p class="eyebrow">Activity</p><h2 class="section-title mt-1">最近更新紀錄</h2></div>
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm">
+        <table class="data-table">
           <thead><tr><th>時間</th><th>來源</th><th>舊 IP</th><th>新 IP</th><th>結果</th></tr></thead>
-          <tbody><tr v-for="log in logs" :key="log.id" class="border-t border-slate-800"><td class="py-2">{{ log.createdAt }}</td><td>{{ log.sourceIp }}</td><td>{{ log.oldIp ?? '—' }}</td><td>{{ log.newIp }}</td><td>{{ log.status }}</td></tr></tbody>
+          <tbody><tr v-for="log in logs" :key="log.id"><td>{{ log.createdAt }}</td><td>{{ log.sourceIp }}</td><td>{{ log.oldIp ?? '—' }}</td><td>{{ log.newIp }}</td><td>{{ log.status }}</td></tr></tbody>
         </table>
       </div>
     </section>

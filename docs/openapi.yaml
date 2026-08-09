@@ -65,6 +65,14 @@ paths:
     get: { tags: [Admin], security: [{ accessJwt: [] }], parameters: [{ $ref: '#/components/parameters/ClientId' }, { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }, { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 } }], responses: { '200': { description: Update logs }, '400': { description: Invalid pagination }, '403': { $ref: '#/components/responses/Forbidden' } } }
   /admin/api/cloudflare/validate-record:
     post: { tags: [Admin], security: [{ accessJwt: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecordInput' } } } }, responses: { '200': { description: Validated DNS record }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /admin/api/cloudflare/zones:
+    get: { tags: [Admin], security: [{ accessJwt: [] }], responses: { '200': { description: Active zones available to the configured API token }, '403': { $ref: '#/components/responses/Forbidden' }, '502': { description: Cloudflare API request failed } } }
+  /admin/api/cloudflare/zones/{zoneId}/records:
+    get:
+      tags: [Admin]
+      security: [{ accessJwt: [] }]
+      parameters: [{ name: zoneId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-f]{32}$' } }]
+      responses: { '200': { description: A and AAAA records in the selected zone }, '403': { $ref: '#/components/responses/Forbidden' }, '502': { description: Cloudflare API request failed } }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: 'ddns_<random>' }

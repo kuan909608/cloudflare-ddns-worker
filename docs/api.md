@@ -16,11 +16,15 @@ Admin API 只接受 Access 驗證後的使用者。所有 POST/PUT/DELETE 僅接
 - `GET/PUT/DELETE /admin/api/clients/{id}`
 - `POST /admin/api/clients/{id}/enable|disable|rotate-token`
 - `GET /admin/api/clients/{id}/logs`
+- `GET /admin/api/cloudflare/zones`
+- `GET /admin/api/cloudflare/zones/{zoneId}/records`
 - `POST /admin/api/cloudflare/validate-record`
 - `GET /admin/api/dashboard`
 - `GET /admin/api/config`
 
 `GET /admin/api/config` 只回傳非敏感 runtime 設定，管理頁用同源 origin 產生 DDNS、curl 與 UniFi URL。Client list/detail 的 `currentDnsIp` 由 Cloudflare DNS API 即時取得；`lastIp` 仍代表最後一次 Gateway 更新狀態。Dashboard 的 recent success/failure 是最近 24 小時 `update_logs` 事件數。
+
+Cloudflare catalog routes 只列出 API Token 可讀取的 active zones 與其中的 A/AAAA records，供管理頁建立 guided selection；內部 ID 不需要人工輸入。API Token 必須具備 `Zone / Zone / Read` 與 `Zone / DNS / Edit`。
 
 非 localhost 的 HTTP request 會在解析 Authorization 前以 400 拒絕。DDNS 先按可信 `CF-Connecting-IP` 套用 60/min pre-auth limiter，再於 Token 成功後套用每 Client 10/min limiter；未知 slug 與錯誤 Token 不會消耗合法 Client bucket。
 
