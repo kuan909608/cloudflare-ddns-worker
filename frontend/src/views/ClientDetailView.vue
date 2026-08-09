@@ -56,7 +56,7 @@ async function copy(value: string) {
       <div>
         <p class="eyebrow">Client detail</p>
         <h1 class="page-title">{{ client.displayName }}</h1>
-        <p class="page-description">{{ client.recordName }} · {{ client.recordType }} Record</p>
+        <p class="page-description">{{ client.recordName }} · {{ client.recordType }} Record{{ client.recordPending ? '（等待第一次更新建立）' : '' }}</p>
       </div>
       <div class="action-group">
         <RouterLink class="btn-secondary" :to="`/clients/${id}/edit`">編輯</RouterLink>
@@ -83,7 +83,7 @@ async function copy(value: string) {
           <div><p class="eyebrow">Cloudflare DNS</p><h2 class="section-title mt-1">綁定狀態</h2></div>
           <dl class="detail-list">
             <div><dt>Record</dt><dd>{{ client.recordName }} <span class="type-chip">{{ client.recordType }}</span></dd></div>
-            <div><dt>目前 IP</dt><dd>{{ client.currentDnsIp ?? '—' }}</dd></div>
+            <div><dt>目前 IP</dt><dd>{{ client.recordPending ? '等待第一次設備更新' : client.currentDnsIp ?? '—' }}</dd></div>
             <div><dt>最後來源 IP</dt><dd>{{ client.lastSourceIp ?? '—' }}</dd></div>
             <div><dt>狀態</dt><dd class="flex flex-wrap gap-2"><StatusBadge :value="client.enabled" /><StatusBadge :value="client.lastStatus" /></dd></div>
           </dl>

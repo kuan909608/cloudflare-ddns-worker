@@ -8,16 +8,17 @@ const mocks = vi.hoisted(() => ({
   enforceRateLimit: vi.fn(async () => undefined),
   repository: {
     list:vi.fn(), findById:vi.fn(), findBySlug:vi.fn(), create:vi.fn(), update:vi.fn(), setEnabled:vi.fn(),
+    claimRecordProvisioning:vi.fn(), bindProvisionedRecord:vi.fn(), releaseRecordProvisioning:vi.fn(),
     rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
   },
-  getRecord: vi.fn(), listRecords:vi.fn(),
+  getZone:vi.fn(), getRecord: vi.fn(), listRecords:vi.fn(), findRecords:vi.fn(), createRecord:vi.fn(),
   updateRecord: vi.fn(),
 }));
 
 vi.mock('../src/services/access-service', () => ({ verifyAccess:mocks.verifyAccess }));
 vi.mock('../src/middleware/rate-limit', () => ({ enforceRateLimit:mocks.enforceRateLimit }));
 vi.mock('../src/infrastructure/d1-client-repository', () => ({ D1ClientRepository:class { constructor() { return mocks.repository; } } }));
-vi.mock('../src/services/cloudflare-dns-service', () => ({ CloudflareDnsService:class { getRecord=mocks.getRecord; listRecords=mocks.listRecords; update=mocks.updateRecord; } }));
+vi.mock('../src/services/cloudflare-dns-service', () => ({ CloudflareDnsService:class { getZone=mocks.getZone; getRecord=mocks.getRecord; listRecords=mocks.listRecords; findRecords=mocks.findRecords; create=mocks.createRecord; update=mocks.updateRecord; } }));
 
 import { route } from '../src/interfaces/router';
 
@@ -57,6 +58,7 @@ beforeEach(() => {
   mocks.repository.create.mockResolvedValue(client);
   mocks.repository.audit.mockResolvedValue(undefined);
   mocks.getRecord.mockResolvedValue(record);
+  mocks.getZone.mockResolvedValue({id:client.zoneId,name:client.zoneName});
   mocks.listRecords.mockResolvedValue([{id:client.recordId,name:client.recordName,type:client.recordType,content:record.content}]);
 });
 
@@ -106,7 +108,7 @@ describe('admin HTTP API', () => {
   });
 
   it('returns runtime config, dashboard, list, live detail and logs', async () => {
-    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net',dnsZoneId:client.zoneId}});
+    expect(await (await route(request('/admin/api/config'), env)).json()).toMatchObject({data:{ddnsOrigin:'https://ddns.kthome.net',dnsZoneId:client.zoneId,dnsZoneName:'example.com'}});
     expect((await route(request('/admin/api/dashboard'), env)).status).toBe(200);
     expect((await route(request('/admin/api/clients'), env)).status).toBe(200);
     expect(await (await route(request(`/admin/api/clients/${id}`), env)).json()).toMatchObject({data:{currentDnsIp:'8.8.8.8'}});
@@ -120,7 +122,7 @@ describe('admin HTTP API', () => {
   });
 
   it('creates, updates, deletes, enables, disables and rotates with JSON mutation policy', async () => {
-    const input = {displayName:'Home',slug:'home-1',recordId:client.recordId,recordName:client.recordName,recordType:'A'};
+    const input = {displayName:'Home',slug:'home-1',bindingMode:'existing',recordId:client.recordId};
     expect((await route(request('/admin/api/clients','POST',input),env)).status).toBe(201);
     expect((await route(request(`/admin/api/clients/${id}`,'PUT',input),env)).status).toBe(200);
     expect((await route(request(`/admin/api/clients/${id}`,'DELETE',{}),env)).status).toBe(200);
@@ -131,7 +133,7 @@ describe('admin HTTP API', () => {
   });
 
   it('rejects browser-controlled Zone fields on Client mutations', async () => {
-    const input = {displayName:'Home',slug:'home-1',recordId:client.recordId,recordName:client.recordName,recordType:'A',zoneId:'a'.repeat(32)};
+    const input = {displayName:'Home',slug:'home-1',bindingMode:'existing',recordId:client.recordId,zoneId:'a'.repeat(32)};
     expect((await route(request('/admin/api/clients','POST',input),env)).status).toBe(400);
   });
 

@@ -20,6 +20,9 @@ describe('D1 repository operations',()=>{
     expect(await repository.findById('id')).toMatchObject({id:'id'});
     expect(await repository.create({id:'id',displayName:'Home',slug:'home',enabled:true,zoneId:'zone',zoneName:'example.com',recordId:'record',recordName:'home.example.com',recordType:'A',tokenHash:'hash',now:'now'})).toMatchObject({slug:'home'});
     expect(await repository.update('id',{displayName:'New Home'})).toMatchObject({id:'id'});
+    expect(await repository.claimRecordProvisioning('id','claim','later','earlier')).toBe(true);
+    expect(await repository.bindProvisionedRecord('id','claim',{id:'record',zoneName:'example.com',name:'home.example.com',type:'A'})).toMatchObject({id:'id'});
+    await repository.releaseRecordProvisioning('id','claim');
     expect(await repository.setEnabled('id',false)).toMatchObject({id:'id'});
     expect(await repository.rotateToken('id','new-hash','later')).toMatchObject({id:'id'});
     await repository.updateStatus('id',{ip:'8.8.8.8',sourceIp:'8.8.8.8',status:'updated',updatedAt:'later'});
@@ -28,6 +31,10 @@ describe('D1 repository operations',()=>{
     await repository.audit('admin@example.com','client.update','id','success');
     expect(await repository.dashboard()).toEqual({total:2,enabled:1,disabled:1,recentSuccess:3,recentFailure:1});
     expect(statements.every(({sql,args})=>!sql.includes('admin@example.com')&&!sql.includes('8.8.8.8')||args.length>0)).toBe(true);
+    expect(statements).toEqual(expect.arrayContaining([
+      expect.objectContaining({sql:expect.stringContaining('record_id IS NULL'),args:['claim','later','later','id','earlier']}),
+      expect.objectContaining({sql:expect.stringContaining('record_provisioning_token=?'),args:expect.arrayContaining(['record','claim'])}),
+    ]));
   });
 
   it('returns null when an update target no longer exists',async()=>{

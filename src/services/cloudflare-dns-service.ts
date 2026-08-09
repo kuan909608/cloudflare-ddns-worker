@@ -1,5 +1,6 @@
 import { errors } from '../domain/errors';
 import type { DnsRecord, DnsRecordGateway } from '../repositories/dns-record-gateway';
+import type { RecordType } from '../domain/models';
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -31,6 +32,12 @@ export class CloudflareDnsService implements DnsRecordGateway {
     }
     throw errors.dnsFailure();
   }
+  async getZone(zoneId: string): Promise<{ id:string; name:string }> {
+    const zone = await this.call<{ id:string; name:string }>(`/zones/${encodeURIComponent(zoneId)}`);
+    const name = zone.name?.toLowerCase().replace(/\.$/u, '');
+    if (zone.id !== zoneId || !name || name.length > 253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(name)) throw errors.dnsFailure();
+    return { id:zone.id, name };
+  }
   async listRecords(zoneId: string): Promise<CloudflareRecordOption[]> {
     const records = await this.listAll<{ id: string; name: string; type: string; content: string }>(`/zones/${encodeURIComponent(zoneId)}/dns_records?order=name&direction=asc`, 1000);
     return records
@@ -41,6 +48,20 @@ export class CloudflareDnsService implements DnsRecordGateway {
     const record = await this.call<{ id: string; zone_id: string; zone_name: string; name: string; type: string; content: string; ttl: number; proxied?: boolean }>(`/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`);
     if (record.type !== 'A' && record.type !== 'AAAA') throw errors.badRequest('Record must be A or AAAA');
     return { id: record.id, zoneId: record.zone_id, zoneName: record.zone_name, name: record.name, type: record.type, content: record.content, ttl: record.ttl, ...(record.proxied === undefined ? {} : { proxied: record.proxied }) };
+  }
+  async findRecords(zoneId: string, name: string, type: RecordType): Promise<DnsRecord[]> {
+    const query = new URLSearchParams({ name, type, match:'all' });
+    const records = await this.listAll<{ id:string; zone_id:string; zone_name:string; name:string; type:string; content:string; ttl:number; proxied?:boolean }>(`/zones/${encodeURIComponent(zoneId)}/dns_records?${query}`, 100);
+    return records
+      .filter((record): record is typeof record & { type: RecordType } => record.type === type && record.name === name)
+      .map((record) => ({ id:record.id, zoneId:record.zone_id, zoneName:record.zone_name, name:record.name, type:record.type, content:record.content, ttl:record.ttl, ...(record.proxied === undefined ? {} : { proxied:record.proxied }) }));
+  }
+  async create(zoneId: string, name: string, type: RecordType, content: string): Promise<DnsRecord> {
+    const record = await this.call<{ id:string; zone_id:string; zone_name:string; name:string; type:string; content:string; ttl:number; proxied?:boolean }>(`/zones/${encodeURIComponent(zoneId)}/dns_records`, {
+      method:'POST', body:JSON.stringify({ name, type, content, ttl:1, proxied:false }),
+    });
+    if (record.type !== type || record.name !== name || record.zone_id !== zoneId) throw errors.dnsFailure();
+    return { id:record.id, zoneId:record.zone_id, zoneName:record.zone_name, name:record.name, type, content:record.content, ttl:record.ttl, ...(record.proxied === undefined ? {} : { proxied:record.proxied }) };
   }
   async update(record: DnsRecord, content: string): Promise<void> {
     await this.call(`/zones/${encodeURIComponent(record.zoneId)}/dns_records/${encodeURIComponent(record.id)}`, { method: 'PATCH', body: JSON.stringify({ type: record.type, name: record.name, content, ttl: record.ttl, ...(record.proxied === undefined ? {} : { proxied: record.proxied }) }) });

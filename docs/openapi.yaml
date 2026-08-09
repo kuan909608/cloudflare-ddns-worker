@@ -79,8 +79,12 @@ components:
     EmptyJson: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, maxProperties: 0 }, example: {} } } }
   schemas:
     UpdateResult: { type: object, required: [success, updated], properties: { success: { const: true }, updated: { type: boolean } } }
-    ClientInput: { type: object, additionalProperties: false, required: [displayName, slug, recordId, recordName, recordType], properties: { displayName: { type: string }, slug: { type: string }, recordId: { type: string }, recordName: { type: string }, recordType: { enum: [A, AAAA] } } }
-    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, dnsZoneId, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, dnsZoneId: { type: string, pattern: '^[0-9a-f]{32}$' }, unifiCompatibilityEnabled: { type: boolean } } } } }
+    ClientInput:
+      oneOf:
+        - { type: object, additionalProperties: false, required: [displayName, slug, bindingMode, recordId], properties: { displayName: { type: string }, slug: { type: string }, bindingMode: { const: existing }, recordId: { type: string, minLength: 16, maxLength: 64 } } }
+        - { type: object, additionalProperties: false, required: [displayName, slug, bindingMode, hostname, recordType], properties: { displayName: { type: string }, slug: { type: string }, bindingMode: { const: new }, hostname: { type: string, pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' }, recordType: { enum: [A, AAAA] } } }
+      discriminator: { propertyName: bindingMode }
+    AdminConfigEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, additionalProperties: false, required: [ddnsOrigin, dnsZoneId, dnsZoneName, unifiCompatibilityEnabled], properties: { ddnsOrigin: { type: string, format: uri }, dnsZoneId: { type: string, pattern: '^[0-9a-f]{32}$' }, dnsZoneName: { type: string, format: hostname }, unifiCompatibilityEnabled: { type: boolean } } } } }
     Error: { type: object, required: [success, message], properties: { success: { const: false }, message: { type: string } } }
   responses:
     Unauthorized: { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' }, example: { success: false, message: Unauthorized } } } }

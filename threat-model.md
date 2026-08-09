@@ -10,7 +10,7 @@
 | D1 資料外洩 | Client metadata、IP、token hashes 外洩 | 無明文 secret、最小管理權、備份加密、retention | IP/metadata 與 hash 仍屬敏感；弱 token 不適用（本系統為高熵） |
 | 重放攻擊 | 竊得的 Bearer request 可重送 | Worker 拒絕明文 HTTP、Cloudflare Always Use HTTPS、rate limit、來源 IP 只能更新成 edge observed IP、token rotation | Bearer token 本質不具 nonce；同一 NAT 攻擊仍可能重放 |
 | 暴力破解 | 猜測 client token、隨機 slug 消耗 D1，或錯誤 Token 排擠合法更新 | 256-bit entropy、constant-time hash compare、來源 IP pre-auth 60/min、驗證後 per-client 10/min、統一 401 | 分散式低速掃描仍可能消耗 Worker 資源 |
-| DNS Record 越權更新 | client 操作其他 record | record 綁定在 D1、API 不收 record/IP、DB unique constraint、更新前核對 type/name | 管理者誤綁定仍可能造成錯誤 |
+| DNS Record 越權更新 | client 操作其他 record | record/待建立 FQDN 綁定在 D1、設備 API 不收 record/IP、DB unique constraint、更新前核對 type/name；首次建立以 conditional claim 防重複 | 管理者誤綁定或命名仍可能造成錯誤 |
 | Worker Secret 洩漏 | DNS token/Access config 暴露 | Wrangler secrets、禁止 log/response、最小 Cloudflare RBAC | Cloudflare 管理平面被接管 |
 | 原始碼或部署環境洩漏 | 原始碼、build 設定或 runtime credential 被 exfiltrate | Repository 不含自動化 workflow、Cloudflare Git App 只授權指定 repository、runtime secrets 只設於 Worker environment、無 client token、branch protection | GitHub 或 Cloudflare 管理帳號遭入侵時仍可能觸發惡意部署 |
 | Supply Chain Attack | npm dependency或 Cloudflare build 被植入 | lockfile、本機 npm audit、最少 production deps、人工審查升級、限制 Cloudflare Git App repository scope | Registry、maintainer、GitHub 或 Cloudflare build chain compromise 無法完全排除 |

@@ -31,11 +31,43 @@ export class DdnsUpdateUseCase {
     let oldIp: string | null = null;
     let updated = false;
     try {
-      const record = await this.dns.getRecord(client.zoneId, client.recordId);
-      if (record.id !== client.recordId || record.zoneId !== client.zoneId || record.name !== client.recordName || record.type !== client.recordType) throw errors.dnsFailure();
-      oldIp = record.content;
-      updated = oldIp !== ip;
-      if (updated) await this.dns.update(record, ip);
+      let activeClient = client;
+      let provisioned = false;
+      let created = false;
+      let record;
+      if (!activeClient.recordId) {
+        const claimId = crypto.randomUUID();
+        const staleBefore = new Date(Date.now() - 60_000).toISOString();
+        const claimed = await this.clients.claimRecordProvisioning(activeClient.id, claimId, now, staleBefore);
+        if (!claimed) {
+          const refreshed = await this.clients.findById(activeClient.id);
+          if (!refreshed?.recordId) throw errors.dnsFailure();
+          activeClient = refreshed;
+        } else {
+          try {
+            const matches = await this.dns.findRecords(activeClient.zoneId, activeClient.recordName, activeClient.recordType);
+            if (matches.length > 1) throw errors.dnsFailure();
+            record = matches[0];
+            if (!record) {
+              record = await this.dns.create(activeClient.zoneId, activeClient.recordName, activeClient.recordType, ip);
+              created = true;
+            }
+            if (record.zoneId !== activeClient.zoneId || record.zoneName !== activeClient.zoneName || record.name !== activeClient.recordName || record.type !== activeClient.recordType) throw errors.dnsFailure();
+            const bound = await this.clients.bindProvisionedRecord(activeClient.id, claimId, { id:record.id, zoneName:record.zoneName, name:record.name, type:record.type });
+            if (!bound) throw errors.dnsFailure();
+            activeClient = bound;
+            provisioned = true;
+          } catch (error) {
+            await this.clients.releaseRecordProvisioning(activeClient.id, claimId).catch(() => undefined);
+            throw error;
+          }
+        }
+      }
+      record ??= await this.dns.getRecord(activeClient.zoneId, activeClient.recordId!);
+      if (record.id !== activeClient.recordId || record.zoneId !== activeClient.zoneId || record.name !== activeClient.recordName || record.type !== activeClient.recordType) throw errors.dnsFailure();
+      oldIp = created ? null : record.content;
+      updated = provisioned || oldIp !== ip;
+      if (!created && oldIp !== ip) await this.dns.update(record, ip);
     } catch {
       await Promise.allSettled([
         this.clients.updateStatus(client.id, { ip: client.lastIp ?? ip, sourceIp: ip, status: 'failed', updatedAt: now }),

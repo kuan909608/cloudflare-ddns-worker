@@ -7,7 +7,7 @@ export interface Client {
   enabled: boolean;
   zoneId: string;
   zoneName: string;
-  recordId: string;
+  recordId: string | null;
   recordName: string;
   recordType: RecordType;
   tokenHash: string;
@@ -22,6 +22,7 @@ export interface Client {
 
 export interface PublicClient extends Omit<Client, 'tokenHash'> {
   currentDnsIp: string | null;
+  recordPending: boolean;
   tokenConfigured: true;
 }
 

@@ -109,7 +109,7 @@ Cloudflare Dashboard → My Profile → API Tokens → Create Custom Token：
 
 - Permission：Zone / DNS / Edit
 - Zone Resources：Include / Specific zone / 只選實際使用 zone
-- 視需求加 client IP filter 與期限
+- 可設定期限；一般 Worker 沒有專屬固定出口 IP，因此不要把 Cloudflare 共用 IP ranges 當作 client IP 白名單。必須使用來源 IP 限制時，需先配置 Zero Trust Enterprise Dedicated Egress IP，再只允許該專屬 IP
 
 不要使用 Global API Key。依序設定三個 Worker secrets：
 
@@ -139,7 +139,7 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 2. `https://APP_HOST/admin` 回傳 308 並導向 `/admin/`。
 3. `/admin/` 會觸發 Access 登入；Access policy 必須拒絕非 member 或非 allowlist email。
 4. 登入後建立測試 Client，保存只顯示一次的 Client Token。
-5. 呼叫 `/api/ddns/{slug}`，確認回傳 `success:true`；首次可能是 `updated:true` 或 `updated:false`，相同 IP 再呼叫必須是 `updated:false`。
+5. 若選擇「建立新主機名」，先確認 Cloudflare 尚無該 Record；呼叫 `/api/ddns/{slug}` 後應回傳 `success:true, updated:true`，並以來源 IP 建立 Record。相同 IP 再呼叫必須是 `updated:false`。
 6. 輪替 token，確認舊 token 回傳 401；停用 Client，確認有效 token 回傳 403。
 7. 若使用 UniFi，驗證 `/api/ddns/{slug}/unifi?hostname=` 回傳 `good <IP>` 或 `nochg <IP>`。
 8. 檢查 security headers，並確認 log 沒有 Authorization、JWT、cookie、token/hash 或 Cloudflare 原始錯誤。
@@ -165,7 +165,7 @@ Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secr
 
 ## Client 操作
 
-每個 Worker 只管理 `DNS_ZONE_ID` 指定的一個 Zone。登入管理頁新增 Client 時只需填寫顯示名稱、裝置代號並選擇 A/AAAA DNS Record；Zone ID 由後端固定注入，Zone 名稱則採用 Cloudflare Record API 的回傳值，browser request 無法指定或切換。裝置代號會成為 `/api/ddns/{slug}` 的路徑，亦是 UniFi Basic Auth username。API Token 只需 `Zone / DNS / Edit`。後端會向 Cloudflare API 完整核對 record ID、固定 zone ID、名稱與 type，且 D1 unique index 防止重複綁定。Client 清單與詳情的 `currentDnsIp` 來自 Cloudflare 即時查詢；`lastIp` 只代表最後一次 Gateway 更新。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
+每個 Worker 只管理 `DNS_ZONE_ID` 固定的一個 Zone；Zone Name 由 Worker 使用同一個 DNS API Token 呼叫 Cloudflare Zone Details API 取得。新增 Client 可選擇既有 A/AAAA Record，或只填主機標籤建立待首次更新的主機名；完整 FQDN 由後端組合，browser request 無法指定或切換 Zone。待建立 Client 第一次通過 Token 驗證後，Worker 以 Cloudflare edge 觀察到的來源 IP 建立 DNS Record，並將 Cloudflare 回傳的 Record ID 永久綁定。D1 provisioning claim 與同名 Record 查找可避免並行請求或中斷重試造成重複建立。API Token 只需 `Zone / DNS / Edit`。Client 清單與詳情的 `currentDnsIp` 來自 Cloudflare 即時查詢；`lastIp` 只代表最後一次 Gateway 更新。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
 
 輪替 Token 會用單一 D1 update 立即取代 hash，舊 token 隨即失效。刪除、停用與輪替都有確認步驟。每個管理 mutation 會先持久化 `started` audit；起始 audit 失敗時操作 fail closed，完成後再寫入 success/failure，避免操作完全無法歸因。
 

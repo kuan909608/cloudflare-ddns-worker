@@ -8,7 +8,7 @@ const nullable = (row: Row, key: string): string | null => row[key] == null ? nu
 function mapClient(row: Row): Client {
   return {
     id: text(row, 'id'), displayName: text(row, 'display_name'), slug: text(row, 'slug'), enabled: Boolean(row.enabled),
-    zoneId: text(row, 'zone_id'), zoneName: text(row, 'zone_name'), recordId: text(row, 'record_id'),
+    zoneId: text(row, 'zone_id'), zoneName: text(row, 'zone_name'), recordId: nullable(row, 'record_id'),
     recordName: text(row, 'record_name'), recordType: text(row, 'record_type') as 'A' | 'AAAA', tokenHash: text(row, 'token_hash'),
     tokenCreatedAt: text(row, 'token_created_at'), lastIp: nullable(row, 'last_ip'), lastSourceIp: nullable(row, 'last_source_ip'),
     lastStatus: nullable(row, 'last_status'), lastUpdatedAt: nullable(row, 'last_updated_at'), createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'),
@@ -40,6 +40,23 @@ export class D1ClientRepository implements ClientRepository {
     await this.db.prepare(`UPDATE clients SET display_name=?, slug=?, zone_id=?, zone_name=?, record_id=?, record_name=?, record_type=?, updated_at=? WHERE id=?`)
       .bind(next.displayName, next.slug, next.zoneId, next.zoneName, next.recordId, next.recordName, next.recordType, now, id).run();
     return this.findById(id);
+  }
+  async claimRecordProvisioning(id: string, claimId: string, claimedAt: string, staleBefore: string): Promise<boolean> {
+    const result = await this.db.prepare(`UPDATE clients SET record_provisioning_token=?, record_provisioning_at=?, updated_at=?
+      WHERE id=? AND record_id IS NULL AND (record_provisioning_token IS NULL OR record_provisioning_at < ?)`)
+      .bind(claimId, claimedAt, claimedAt, id, staleBefore).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+  async bindProvisionedRecord(id: string, claimId: string, record: { id: string; zoneName: string; name: string; type: 'A' | 'AAAA' }): Promise<Client | null> {
+    const now = new Date().toISOString();
+    const result = await this.db.prepare(`UPDATE clients SET zone_name=?, record_id=?, record_name=?, record_type=?, record_provisioning_token=NULL, record_provisioning_at=NULL, updated_at=?
+      WHERE id=? AND record_id IS NULL AND record_provisioning_token=?`)
+      .bind(record.zoneName, record.id, record.name, record.type, now, id, claimId).run();
+    return (result.meta.changes ?? 0) > 0 ? this.findById(id) : null;
+  }
+  async releaseRecordProvisioning(id: string, claimId: string): Promise<void> {
+    await this.db.prepare('UPDATE clients SET record_provisioning_token=NULL, record_provisioning_at=NULL WHERE id=? AND record_provisioning_token=?')
+      .bind(id, claimId).run();
   }
   async setEnabled(id: string, enabled: boolean): Promise<Client | null> { await this.db.prepare('UPDATE clients SET enabled=?, updated_at=? WHERE id=?').bind(enabled ? 1 : 0, new Date().toISOString(), id).run(); return this.findById(id); }
   async rotateToken(id: string, hash: string, now: string): Promise<Client | null> { await this.db.prepare('UPDATE clients SET token_hash=?, token_created_at=?, updated_at=? WHERE id=?').bind(hash, now, now, id).run(); return this.findById(id); }
