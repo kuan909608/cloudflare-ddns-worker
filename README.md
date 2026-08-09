@@ -35,7 +35,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-本機 `.dev.vars` 只能放測試 secret 且已被 gitignore。第一次尚無 Access JWT 時，建議測試純 service/unit tests；完整 Admin flow 請在正式 Access application 驗證。本機 D1 由 Wrangler 模擬，不會在 Cloudflare 帳戶建立額外資料庫。
+本機 `.dev.vars` 只能放測試用 runtime 值且已被 gitignore；可由 `.env.example` 複製後填入，不得使用 production secret。第一次尚無 Access JWT 時，建議測試純 service/unit tests；完整 Admin flow 請在正式 Access application 驗證。本機 D1 由 Wrangler 模擬，不會在 Cloudflare 帳戶建立額外資料庫。
 
 ## 部署步驟
 
@@ -55,9 +55,17 @@ npm run db:migrate:local
 
 所有命令必須通過。正式 secret 不得放進 `.dev.vars`、GitHub、build variables 或任何已追蹤檔案。
 
-### 2. 設定網域並登入 Cloudflare
+### 2. 設定 runtime variables 並登入 Cloudflare
 
-將 `wrangler.jsonc` 的 `APP_HOST` 從 `ddns.example.com` 改成正式 hostname，然後確認 Wrangler 使用正確帳戶：
+先在 Worker → Settings → Variables & Secrets 設定下列非敏感 runtime variables；`wrangler.jsonc` 刻意不宣告 `vars` 且設有 `keep_vars:true`，後續 Git 自動部署會沿用 Dashboard 現值，不會以 repository 預設值覆蓋：
+
+- `ENVIRONMENT=production`
+- `APP_HOST`：正式 hostname，例如 `ddns.example.com`
+- `ALLOW_PRIVATE_IPS=false`
+- `ENABLE_UNIFI_COMPAT=true`（不需要 UniFi 時設為 `false`）
+- `DETAILED_ERRORS=false`
+
+接著確認 Wrangler 使用正確帳戶：
 
 ```bash
 npx wrangler login
@@ -147,7 +155,7 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 5. Root directory：`/`。
 6. 不需要 preview 時關閉 non-production branch builds。
 
-Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime secrets；四個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
+Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；五個非敏感 runtime variables 與四個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 會自動建置及部署，但 D1 migration 仍需由管理者手動執行。
 
 ### 10. 後續部署與回復
 
@@ -256,6 +264,14 @@ npx wrangler d1 time-travel restore REPLACE_AUTO_PROVISIONED_D1_NAME --bookmark 
 還原到 token 輪替前會使舊 hash 恢復；還原後必須輪替所有受影響 Client token。
 
 ## 故障排除
+
+Wrangler 已啟用 100% invocation logs 並持久化到 Cloudflare Workers Logs；設定變更需重新部署才會生效。即時追蹤 production Worker：
+
+```bash
+npx wrangler tail cloudflare-ddns-gateway --format pretty
+```
+
+先啟動 tail，再重現一次問題。歷史記錄可在 Cloudflare Dashboard → Workers & Pages → `cloudflare-ddns-gateway` → Observability → Logs 查詢，並以 request path 與 HTTP status `500` 篩選。
 
 - `401 Unauthorized`：token 缺漏/錯誤/已輪替；不要把 Authorization 貼進 log。
 - UniFi 相容端點 `404`：確認該環境沒有把 `ENABLE_UNIFI_COMPAT` 改為 `false`，且使用的是正確 DDNS hostname。
