@@ -10,7 +10,7 @@ onMounted(store.load);
   <div class="page">
     <header class="page-header">
       <div><p class="eyebrow">Devices</p><h1 class="page-title">Clients</h1><p class="page-description">每個 Client 只持有自己的 Token，並固定綁定一筆 DNS Record。</p></div>
-      <RouterLink class="btn-primary" to="/clients/new">新增 Client</RouterLink>
+      <RouterLink v-if="!store.loading && store.clients.length > 0" class="btn-primary" to="/clients/new">新增 Client</RouterLink>
     </header>
     <p v-if="store.error" class="notice" role="alert">{{ store.error }}</p>
     <section class="surface overflow-hidden">

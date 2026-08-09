@@ -70,7 +70,6 @@
   .nav-link { border-radius: .58rem; padding: .48rem .82rem; color: var(--muted); font-size: .86rem; font-weight: 650; text-decoration: none; transition: color 140ms ease, background 140ms ease; }
   .nav-link:hover { color: var(--text); }
   .nav-link--active { color: var(--text); background: rgba(255,255,255,.09); box-shadow: inset 0 1px rgba(255,255,255,.06); }
-  .header-action { justify-self: end; }
   .app-main { width: min(100% - 2.5rem, 72rem); margin: 0 auto; padding: 3.5rem 0 5rem; }
   .page { display: grid; gap: 1.5rem; }
   .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; }
@@ -151,7 +150,6 @@
   .app-nav { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
   .nav-link { flex: 1; text-align: center; }
   .brand small { display: none; }
-  .header-action { padding-inline: .75rem; }
   .app-main { width: min(100% - 1.5rem, 72rem); padding: 2.25rem 0 4rem; }
   .page-header { align-items: flex-start; flex-direction: column; }
   .form-grid { grid-template-columns: 1fr; }

@@ -18,7 +18,6 @@ const navigation = [
             {{ item.label }}
           </RouterLink>
         </nav>
-        <RouterLink class="btn-primary header-action" to="/clients/new">新增 Client</RouterLink>
       </div>
     </header>
     <main class="app-main">
