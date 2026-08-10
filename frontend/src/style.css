@@ -113,6 +113,7 @@
   .selection-summary span { color: var(--muted); font-size: .78rem; }
   .type-chip { border-radius: 999px; padding: .25rem .55rem; color: var(--accent-strong) !important; background: rgba(119,215,155,.12); font-weight: 750; }
   .notice { border: 1px solid rgba(251,191,36,.2); border-radius: .85rem; padding: .8rem 1rem; color: #f7d88a; background: rgba(251,191,36,.06); font-size: .82rem; }
+  .notice--success { border-color: rgba(119,215,155,.25); color: var(--accent-strong); background: rgba(119,215,155,.07); }
   .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: .65rem; padding-top: .25rem; }
   .action-group { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
   .btn-primary, .btn-secondary, .btn-danger { display: inline-flex; min-height: 2.55rem; align-items: center; justify-content: center; border-radius: .72rem; padding: .6rem 1rem; font-size: .84rem; font-weight: 720; text-decoration: none; cursor: pointer; transition: transform 100ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease; }

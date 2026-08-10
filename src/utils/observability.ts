@@ -18,3 +18,12 @@ export function logRequestError(request: Request, pathname: string, error: unkno
     category: errorCategory(error),
   });
 }
+
+export function logRequestCompletion(request: Request, pathname: string, status: number): void {
+  console.info({
+    event: 'request_completed',
+    method: request.method,
+    pathname,
+    status,
+  });
+}

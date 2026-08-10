@@ -14,8 +14,8 @@
 | Worker Secret 洩漏 | DNS token/Access config 暴露 | Wrangler secrets、禁止 log/response、最小 Cloudflare RBAC | Cloudflare 管理平面被接管 |
 | 原始碼或部署環境洩漏 | 原始碼、build 設定或 runtime credential 被 exfiltrate | Repository 不含自動化 workflow、Cloudflare Git App 只授權指定 repository、runtime secrets 只設於 Worker environment、無 client token、branch protection | GitHub 或 Cloudflare 管理帳號遭入侵時仍可能觸發惡意部署 |
 | Supply Chain Attack | npm dependency或 Cloudflare build 被植入 | lockfile、本機 npm audit、最少 production deps、人工審查升級、限制 Cloudflare Git App repository scope | Registry、maintainer、GitHub 或 Cloudflare build chain compromise 無法完全排除 |
-| 偽造來源 IP | DNS 被更新為任意 IP | 不讀 body/query；CF-Connecting-IP 存在但 family 不符時 fail closed；僅在它缺漏/格式無效時依規格檢查 XFF；嚴格 global-unicast validation，private mode 只放行 RFC1918/ULA | Worker 被非預期路徑呼叫時轉送 header 風險仍需由 custom domain、host gate 與 Cloudflare edge 維持 |
-| DoS / 資源耗盡 | D1/API 成本與延遲上升 | D1 固定窗口三層限流、過期窗口索引清理、body/route/method 限制、Cloudflare WAF 可加強 | 全球分散攻擊仍可能觸及 Worker，且 limiter 與業務資料共用 D1 額度 |
+| 偽造來源 IP | DNS 被更新為任意 IP | 不讀 body/query IP；只接受合法 `CF-Connecting-IP`，缺漏或格式錯誤都 fail closed，永不信任 XFF；嚴格 global-unicast validation，private mode 只放行 RFC1918/ULA | Worker subrequest/header 語意仍需由 custom domain、host gate 與 Cloudflare edge 維持 |
+| DoS / 資源耗盡 | D1/API 成本與延遲上升 | Workers Rate Limiting bindings 在 D1 前套用三層限流；body/route/method 限制；scheduled retention；Cloudflare WAF 可加強 | Binding counter 依 Cloudflare location 生效，全球分散攻擊仍可能觸及 Worker；需以 WAF 與告警補強 |
 
 ## 資產與安全目標
 

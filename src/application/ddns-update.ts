@@ -22,7 +22,6 @@ export class DdnsUpdateUseCase {
     private readonly clients: ClientRepository,
     private readonly dns: DnsRecordGateway,
     private readonly allowPrivate: boolean,
-    private readonly preAuthRateLimit: (request: Request, slug: string) => Promise<void> = async () => undefined,
     private readonly clientRateLimit: (clientId: string) => Promise<void> = async () => undefined,
   ) {}
   async execute(slug: string, request: Request): Promise<{ updated: boolean; clientId: string }> {
@@ -31,7 +30,6 @@ export class DdnsUpdateUseCase {
     return this.executeWithToken(slug, request, token);
   }
   async executeWithToken(slug: string, request: Request, token: string): Promise<{ updated: boolean; clientId: string; ip: string }> {
-    await this.preAuthRateLimit(request, slug);
     const client = await this.clients.findBySlug(slug);
     if (!client) throw errors.unauthorized();
     if (!client.enabled) throw errors.disabled();

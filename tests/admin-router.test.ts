@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   repository: {
     list:vi.fn(), findById:vi.fn(), findBySlug:vi.fn(), create:vi.fn(), update:vi.fn(), setEnabled:vi.fn(),
     claimRecordProvisioning:vi.fn(), bindProvisionedRecord:vi.fn(), releaseRecordProvisioning:vi.fn(),
-    rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), allLogs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(),
+    rotateToken:vi.fn(), updateStatus:vi.fn(), remove:vi.fn(), addLog:vi.fn(), logs:vi.fn(), allLogs:vi.fn(), audit:vi.fn(), dashboard:vi.fn(), pruneLogsBefore:vi.fn(),
   },
   getZone:vi.fn(), getRecord: vi.fn(), listRecords:vi.fn(), findRecords:vi.fn(), createRecord:vi.fn(),
   updateRecord: vi.fn(),
@@ -33,6 +33,7 @@ const env = {
   ENVIRONMENT:'production', APP_HOST:'ddns.kthome.net', DNS_ZONE_ID:client.zoneId, ENABLE_UNIFI_COMPAT:'true',
   ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com', ACCESS_AUD:'aud',
   CLOUDFLARE_DNS_API_TOKEN:'secret', DDNS_DB:{} as D1Database,
+  DDNS_PREAUTH_RATE_LIMITER:{} as RateLimit, DDNS_CLIENT_RATE_LIMITER:{} as RateLimit, ADMIN_RATE_LIMITER:{} as RateLimit,
   ASSETS:{ fetch:vi.fn(async () => new Response('asset')) },
 } as unknown as Env;
 
@@ -84,17 +85,17 @@ describe('admin HTTP API', () => {
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
   });
 
-  it('logs a sanitized category when an unexpected D1 failure becomes a 500', async () => {
+  it('logs a sanitized category when the edge limiter is unavailable', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    mocks.enforceRateLimit.mockRejectedValueOnce(new Error('D1_ERROR: no such table: rate_limit_windows'));
+    mocks.enforceRateLimit.mockRejectedValueOnce(new Error('edge binding internal detail'));
     try {
       const response = await route(request('/admin/api/config'), env);
       expect(response.status).toBe(500);
       expect(await response.json()).toEqual({ success:false, message:'Internal server error' });
       expect(log).toHaveBeenCalledWith({
-        event:'request_error', method:'GET', pathname:'/admin/api/config', status:500, category:'D1_SCHEMA_MISSING',
+        event:'request_error', method:'GET', pathname:'/admin/api/config', status:500, category:'UNEXPECTED_ERROR',
       });
-      expect(JSON.stringify(log.mock.calls)).not.toContain('rate_limit_windows');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('internal detail');
     } finally {
       log.mockRestore();
     }

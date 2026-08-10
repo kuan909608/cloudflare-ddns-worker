@@ -15,6 +15,7 @@ const token = ref('');
 const ddnsOrigin = ref('');
 const dnsZoneId = ref('');
 const dnsZoneName = ref('');
+const unifiCompatibilityEnabled = ref(false);
 const initializing = ref(true);
 const saving = ref(false);
 
@@ -53,6 +54,7 @@ onMounted(async () => {
     ddnsOrigin.value = config.ddnsOrigin;
     dnsZoneId.value = config.dnsZoneId;
     dnsZoneName.value = config.dnsZoneName;
+    unifiCompatibilityEnabled.value = config.unifiCompatibilityEnabled;
     records.value = availableRecords;
     if (existing) {
       const input = toClientInput(existing);
@@ -84,7 +86,7 @@ async function submit() {
   try {
     if (props.id) {
       await adminApi.update(props.id, payload());
-      await router.push(`/clients/${props.id}`);
+      await router.push({path:`/clients/${props.id}`,query:{success:'updated'}});
     } else {
       const result = await adminApi.create(payload());
       token.value = result.token;
@@ -151,6 +153,6 @@ function close() {
       <div class="form-actions"><RouterLink class="btn-secondary" to="/clients">取消</RouterLink><button class="btn-primary" :disabled="initializing || saving || !canSubmit">{{ saving ? '正在儲存…' : props.id ? '儲存變更' : '建立並產生 Token' }}</button></div>
     </form>
 
-    <TokenModal v-if="token" :token="token" :slug="form.slug" :ddns-origin="ddnsOrigin" :hostname="modalHostname" @close="close" />
+    <TokenModal v-if="token" :token="token" :slug="form.slug" :ddns-origin="ddnsOrigin" :hostname="modalHostname" :unifi-compatibility-enabled="unifiCompatibilityEnabled" @close="close" />
   </div>
 </template>

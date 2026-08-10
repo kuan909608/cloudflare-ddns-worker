@@ -1,7 +1,8 @@
-import { describe,expect,it } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { AppError } from '../src/domain/errors';
 import { basicCredentials,bearerToken,boundedInteger,enforceSameOrigin,errorResponse,json,strictEmptyJson,strictJson,success } from '../src/utils/http';
 import { redact,securityHeaders } from '../src/utils/security';
+import { logRequestCompletion } from '../src/utils/observability';
 
 describe('HTTP policy',()=>{
   it('accepts bearer only, never Basic',()=>{expect(bearerToken(new Request('https://x',{headers:{Authorization:`Bearer ddns_${'a'.repeat(32)}`}}))).toContain('ddns_');expect(bearerToken(new Request('https://x',{headers:{Authorization:'Basic abc'}}))).toBeNull();expect(bearerToken(new Request('https://x'))).toBeNull();});
@@ -13,4 +14,5 @@ describe('HTTP policy',()=>{
   it('uses stable envelopes and hides internal errors',async()=>{expect(await json({a:1}).json()).toEqual({a:1});expect(await success({a:1}).json()).toEqual({success:true,data:{a:1}});expect(await errorResponse(new AppError(401,'Unauthorized','X')).json()).toEqual({success:false,message:'Unauthorized'});expect(await errorResponse(new Error('sql leaked')).json()).toEqual({success:false,message:'Internal server error'});expect(await errorResponse(new Error('detail'),true).json()).toEqual({success:false,message:'detail'});});
   it('sets every browser security header without unsafe directives',()=>{const response=securityHeaders(new Response('ok'));expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");expect(response.headers.get('content-security-policy')).not.toContain('unsafe-');expect(response.headers.get('x-content-type-options')).toBe('nosniff');expect(response.headers.get('referrer-policy')).toBe('no-referrer');expect(response.headers.get('permissions-policy')).toContain('camera=()');expect(response.headers.get('strict-transport-security')).toContain('63072000');expect(response.headers.get('x-frame-options')).toBe('DENY');});
   it('recursively redacts credentials while preserving safe values',()=>{expect(redact({authorization:'Bearer x',nested:{tokenHash:'x',record:'safe'},list:[{secret:'x'}]})).toEqual({authorization:'[REDACTED]',nested:{tokenHash:'[REDACTED]',record:'safe'},list:[{secret:'[REDACTED]'}]});expect(redact('safe')).toBe('safe');});
+  it('logs a query-free request completion event',()=>{const info=vi.spyOn(console,'info').mockImplementation(()=>undefined);logRequestCompletion(new Request('https://ddns.example.com/api/ddns/home?token=must-not-appear',{method:'POST'}),'/api/ddns/home',400);expect(info).toHaveBeenCalledWith({event:'request_completed',method:'POST',pathname:'/api/ddns/home',status:400});expect(JSON.stringify(info.mock.calls)).not.toContain('must-not-appear');info.mockRestore();});
 });

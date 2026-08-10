@@ -13,6 +13,7 @@ paths:
     post:
       tags: [DDNS]
       operationId: updateDdns
+      description: Requires a true zero-byte request body. Zero-length body streams are accepted; any content and every query string are rejected. The source must be a valid CF-Connecting-IP; X-Forwarded-For is never trusted.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: clientSlug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }]
       responses:
@@ -26,7 +27,7 @@ paths:
     get:
       tags: [DDNS]
       summary: Optional UniFi/Inadyn compatibility endpoint
-      description: Enabled by the shipped Wrangler configuration and independently switchable with ENABLE_UNIFI_COMPAT. Username must equal clientSlug; password is the one-time Client Token. Hostname query values are ignored.
+      description: Fail-closed and available only when ENABLE_UNIFI_COMPAT=true. Username must equal clientSlug; password is the one-time Client Token. Hostname query values are ignored; credential query values are rejected.
       security: [{ basicAuth: [] }]
       parameters: [{ name: clientSlug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }]
       responses:

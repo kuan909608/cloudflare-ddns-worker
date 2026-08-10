@@ -1,5 +1,6 @@
 import type { AdminUpdateLog, Client, UpdateLog } from '../domain/models';
 import type { ClientRepository, CreateClientRecord } from '../repositories/client-repository';
+import type { LogRetentionRepository } from '../repositories/log-retention-repository';
 
 type Row = Record<string, unknown>;
 const text = (row: Row, key: string): string => String(row[key]);
@@ -24,7 +25,7 @@ function mapAdminLog(row: Row): AdminUpdateLog {
   return { ...mapLog(row), clientDisplayName:text(row, 'client_display_name'), clientSlug:text(row, 'client_slug') };
 }
 
-export class D1ClientRepository implements ClientRepository {
+export class D1ClientRepository implements ClientRepository, LogRetentionRepository {
   constructor(private readonly db: D1Database) {}
 
   async list(): Promise<Client[]> {
@@ -83,5 +84,19 @@ export class D1ClientRepository implements ClientRepository {
       (SELECT COUNT(*) FROM update_logs WHERE unixepoch(created_at) >= unixepoch('now', '-24 hours') AND status IN ('updated','unchanged')) recentSuccess,
       (SELECT COUNT(*) FROM update_logs WHERE unixepoch(created_at) >= unixepoch('now', '-24 hours') AND status='failed') recentFailure`).first<Row>();
     return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key, Number(value ?? 0)]));
+  }
+  async pruneLogsBefore(cutoff: string, batchSize: number): Promise<{ updateLogs: number; adminAuditLogs: number }> {
+    const results = await this.db.batch([
+      this.db.prepare(`DELETE FROM update_logs WHERE id IN (
+        SELECT id FROM update_logs WHERE created_at < ? ORDER BY created_at LIMIT ?
+      )`).bind(cutoff, batchSize),
+      this.db.prepare(`DELETE FROM admin_audit_logs WHERE id IN (
+        SELECT id FROM admin_audit_logs WHERE created_at < ? ORDER BY created_at LIMIT ?
+      )`).bind(cutoff, batchSize),
+    ]);
+    return {
+      updateLogs: results[0]?.meta.changes ?? 0,
+      adminAuditLogs: results[1]?.meta.changes ?? 0,
+    };
   }
 }

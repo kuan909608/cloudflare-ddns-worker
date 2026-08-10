@@ -5,6 +5,12 @@
   "compatibility_date": "2026-07-25",
   "workers_dev": false,
   "keep_vars": true,
+  "ratelimits": [
+    { "name": "DDNS_PREAUTH_RATE_LIMITER", "namespace_id": "90960801", "simple": { "limit": 60, "period": 60 } },
+    { "name": "DDNS_CLIENT_RATE_LIMITER", "namespace_id": "90960802", "simple": { "limit": 10, "period": 60 } },
+    { "name": "ADMIN_RATE_LIMITER", "namespace_id": "90960803", "simple": { "limit": 60, "period": 60 } }
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
   "secrets": {
     "required": [
       "CLOUDFLARE_DNS_API_TOKEN",
@@ -16,7 +22,7 @@
     "enabled": true,
     "logs": {
       "enabled": true,
-      "invocation_logs": true,
+      "invocation_logs": false,
       "head_sampling_rate": 1,
       "persist": true
     }

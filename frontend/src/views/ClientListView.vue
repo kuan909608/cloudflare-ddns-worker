@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import StatusBadge from '../components/StatusBadge.vue';
 import { formatLocalDateTime } from '../services/date-time';
 import { useClientsStore } from '../stores/clients';
 const store = useClientsStore();
+const route = useRoute();
+const successMessage = computed(() => route.query.success === 'deleted' ? 'Client 已刪除' : '');
 onMounted(store.load);
 </script>
 
@@ -13,6 +16,7 @@ onMounted(store.load);
       <div><p class="eyebrow">Devices</p><h1 class="page-title">Clients</h1><p class="page-description">每個 Client 只持有自己的 Token，並固定綁定一筆 DNS Record。</p></div>
       <RouterLink v-if="!store.loading && store.clients.length > 0" class="btn-primary" to="/clients/new">新增 Client</RouterLink>
     </header>
+    <p v-if="successMessage" class="notice notice--success" role="status">{{ successMessage }}</p>
     <p v-if="store.error" class="notice" role="alert">{{ store.error }}</p>
     <section class="surface overflow-hidden">
       <div v-if="store.loading" class="empty-state text-slate-400">正在載入 Clients…</div>

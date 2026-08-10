@@ -71,15 +71,10 @@ export function isAllowedIp(value: string, recordType: RecordType, allowPrivate 
 
 export function sourceIp(request: Request, recordType: RecordType, allowPrivate = false): string | null {
   const connectingIp = request.headers.get('CF-Connecting-IP')?.trim();
-  if (connectingIp) {
-    if (isAllowedIp(connectingIp, recordType, allowPrivate)) return connectingIp;
-    if (ipVersion(connectingIp) !== null) return null;
-  }
-  const forwarded = (request.headers.get('X-Forwarded-For') ?? '').split(',').map((item) => item.trim()).filter(Boolean);
-  return forwarded.find((candidate) => isAllowedIp(candidate, recordType, allowPrivate)) ?? null;
+  return connectingIp && isAllowedIp(connectingIp, recordType, allowPrivate) ? connectingIp : null;
 }
 
-export function rateLimitSource(request: Request): string {
+export function rateLimitSource(request: Request): string | null {
   const connectingIp = request.headers.get('CF-Connecting-IP')?.trim().toLowerCase();
-  return connectingIp && ipVersion(connectingIp) !== null ? connectingIp : 'unknown';
+  return connectingIp && ipVersion(connectingIp) !== null ? connectingIp : null;
 }

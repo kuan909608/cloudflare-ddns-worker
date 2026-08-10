@@ -63,8 +63,9 @@ npm run db:migrate:local
 - `APP_HOST`：正式 hostname，例如 `ddns.example.com`
 - `DNS_ZONE_ID`：此 Worker 唯一可管理的 Cloudflare Zone ID（Zone Overview 右側可查）
 - `ALLOW_PRIVATE_IPS=false`
-- `ENABLE_UNIFI_COMPAT=true`（不需要 UniFi 時設為 `false`）
+- `ENABLE_UNIFI_COMPAT=true`（只有明確設為 `true` 才啟用；未設定或其他值都 fail closed 為停用）
 - `DETAILED_ERRORS=false`
+- `LOG_RETENTION_DAYS=90`（可省略；update logs 與 admin audit 共用此保存期，預設 90 天）
 
 接著確認 Wrangler 使用正確帳戶：
 
@@ -120,7 +121,7 @@ npx wrangler secret put ACCESS_AUD
 npx wrangler secret list
 ```
 
-`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`。管理者 Email allowlist 只由 Cloudflare Access policy 維護，Worker 不保留第二份名單；Worker 仍驗證 JWT 的 signature、issuer、audience、expiration、type 與 email identity。`wrangler.jsonc` 的 `secrets.required` 只預留這三個必要名稱，不包含或覆蓋 secret 值；缺少任一項時 Wrangler 會阻止後續部署並列出缺少名稱。`wrangler secret put` 會建立並立即部署新的 Worker version；三個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
+`ACCESS_TEAM_DOMAIN` 填 `your-team.cloudflareaccess.com`。管理者 Email allowlist 只由 Cloudflare Access policy 維護，Worker 不保留第二份名單；Worker 仍驗證 JWT 的 signature、issuer、audience、expiration、type 與 email identity。`wrangler.jsonc` 的 `secrets.required` 只提供 Wrangler 型別／開發提示，不會驗證遠端 secret，也不會阻止 deploy；部署者必須以 `wrangler secret list` 人工確認三個名稱都存在。`wrangler secret put` 會建立並立即部署新的 Worker version；三個 secret 全部設定完成後才可繼續。Secret 值不會顯示在 `secret list`。
 
 ### 7. 綁定 Custom Domain 與 TLS
 
@@ -131,7 +132,7 @@ Workers & Pages → 選擇 `cloudflare-ddns-worker` → Settings → Domains & R
 - Access application path 仍只有 `APP_HOST/admin/*`
 - 沒有 Bypass policy
 
-Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通過 Worker 與 Access JWT gate。限流使用同一個 D1 的固定窗口表：來源 IP 60/min、驗證後每 Client 10/min、每管理者 60/min。
+Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通過 Worker 與 Access JWT gate。三層限流使用 Cloudflare Workers Rate Limiting bindings，在任何公開 DDNS D1 lookup 前先套用來源 IP 60/min，驗證後每 Client 10/min，管理 API 每管理者 60/min；D1 不再保存或清理限流 counter。
 
 ### 8. 執行上線 smoke test
 
@@ -142,7 +143,8 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 5. 若選擇「建立新主機名」，先確認 Cloudflare 尚無該 Record；呼叫 `/api/ddns/{slug}` 後應回傳 `success:true, updated:true`，並以來源 IP 建立 Record。相同 IP 再呼叫必須是 `updated:false`。
 6. 輪替 token，確認舊 token 回傳 401；停用 Client，確認有效 token 回傳 403。
 7. 若使用 UniFi，驗證 `/api/ddns/{slug}/unifi?hostname=` 回傳 `good <IP>` 或 `nochg <IP>`。
-8. 檢查 security headers，並確認 log 沒有 Authorization、JWT、cookie、token/hash 或 Cloudflare 原始錯誤。
+8. 檢查 security headers，並確認 redacted custom log 沒有 query、Authorization、JWT、cookie、token/hash 或 Cloudflare 原始錯誤。
+9. 在 Triggers 確認每日 `17 3 * * *` UTC cron；以測試資料驗證超過 `LOG_RETENTION_DAYS` 的兩類 logs 會分批清除。
 
 ### 9. 連接 Cloudflare Git Build
 
@@ -155,7 +157,7 @@ Worker Static Assets 使用 `run_worker_first:true`，Vue 資產也必須先通�
 5. Root directory：`/`。
 6. 不需要 preview 時關閉 non-production branch builds。
 
-Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；六個非敏感 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 時，production deploy 會先執行 `npm run db:migrate`；migration 失敗便中止，不會部署相依 Worker。首次 deploy 仍須依步驟 3、4 先建立 draft D1，再人工初始化 schema，因為 migration 執行前必須已有遠端 D1。
+Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secrets 只存在建置環境，不是 Worker runtime variables；上述 runtime variables 與三個 runtime secrets 必須保留在 Worker → Settings → Variables & Secrets。`keep_vars:true` 會在部署時沿用這些 Dashboard bindings。之後 push 到 `main` 時，production deploy 會先執行 `npm run db:migrate`；migration 失敗便中止，不會部署相依 Worker。首次 deploy 仍須依步驟 3、4 先建立 draft D1，再人工初始化 schema，因為 migration 執行前必須已有遠端 D1。
 
 ### 10. 後續部署與回復
 
@@ -167,7 +169,7 @@ Workers Build 會使用 `package.json` 鎖定的 Wrangler。Build variables/secr
 
 每個 Worker 只管理 `DNS_ZONE_ID` 固定的一個 Zone；Zone Name 由 Worker 使用同一個 DNS API Token 呼叫 Cloudflare Zone Details API 取得。新增 Client 可選擇既有 A/AAAA Record，或只填主機標籤建立待首次更新的主機名；完整 FQDN 由後端組合，browser request 無法指定或切換 Zone。待建立 Client 第一次通過 Token 驗證後，Worker 以 Cloudflare edge 觀察到的來源 IP 建立 DNS Record，並將 Cloudflare 回傳的 Record ID 永久綁定。D1 provisioning claim 與同名 Record 查找可避免並行請求或中斷重試造成重複建立。API Token 只需 `Zone / DNS / Edit`。Client 清單與詳情的 `currentDnsIp` 來自 Cloudflare 即時查詢；`lastIp` 只代表最後一次 Gateway 更新。建立成功的 token 只顯示一次，不進 localStorage、sessionStorage、IndexedDB、cookie 或持久化 Pinia。
 
-輪替 Token 會用單一 D1 update 立即取代 hash，舊 token 隨即失效。刪除、停用與輪替都有確認步驟。每個管理 mutation 會先持久化 `started` audit；起始 audit 失敗時操作 fail closed，完成後再寫入 success/failure，避免操作完全無法歸因。
+輪替 Token 會用單一 D1 update 立即取代 hash，舊 token 隨即失效。刪除、停用與輪替都有確認步驟。每個管理 mutation 會先持久化 `started` audit；起始 audit 失敗時操作 fail closed。完成 audit 無法寫入時不會回滾已完成的 D1/DNS 行為，但一定輸出不含 email、token 或 provider detail 的 `severity:high` 結構化事件；外部 DNS 操作不宣稱具備跨系統 transaction。
 
 ### curl
 
@@ -177,11 +179,11 @@ curl --fail-with-body -X POST \
   -H 'Authorization: Bearer ddns_REPLACE_WITH_ONE_TIME_TOKEN'
 ```
 
-不得加 `ip`、`hostname`、`record` 或 `zone` query/body；伺服器只採 Cloudflare edge 觀察到的 public IP。正常回應為 `{"success":true,"updated":true}` 或 `updated:false`。
+此 POST 必須是真正的 0-byte body；curl 產生的零長度 body stream 會被接受，任何有內容的 body 都回 400。不得加 `token`、`password`、`ip`、`hostname`、`record` 或 `zone` query/body；伺服器只接受合法 `CF-Connecting-IP`，缺失或格式錯誤直接拒絕且永不採用 `X-Forwarded-For`。正常回應為 `{"success":true,"updated":true}` 或 `updated:false`。
 
 ## UniFi Custom DDNS
 
-UniFi Network 的 Custom DDNS 由 Inadyn 驅動，會用 GET 與 HTTP Basic Auth 呼叫自訂 server。專案預設提供隔離的相容端點，且不改變主要 Bearer POST 安全模式；不需要 UniFi 時可將 `ENABLE_UNIFI_COMPAT` 設為 `false` 關閉。
+UniFi Network 的 Custom DDNS 由 Inadyn 驅動，會用 GET 與 HTTP Basic Auth 呼叫自訂 server。相容端點不改變主要 Bearer POST 安全模式，但採 fail-closed：只有 `ENABLE_UNIFI_COMPAT=true` 才會啟用並在管理頁顯示 UniFi 操作，未設定、`false` 或其他值一律回 404。
 
 管理頁建立 Client 後，使用一次性 Client Token 設定 UniFi：
 
@@ -242,7 +244,7 @@ npm run test:coverage
 npm run build
 ```
 
-Vitest 覆蓋 Worker/Admin HTTP routes、token/hash/constant-time、Access JWT 偽造/audience/expiration、Cloudflare API mock、D1 repository、rate limit、IP family 與禁止範圍、header precedence、串流 body/content type/size、security headers、redaction、SQL/path/query injection、前端 Client payload 與 runtime URL。Coverage 對整個後端核心計算並強制 lines/functions/statements 90%、branches 85%；production 禁止以真實 token 當 fixture。
+Vitest 覆蓋 Worker/Admin HTTP routes、真實零 byte POST stream、token/hash/constant-time、Access JWT 偽造/audience/expiration、Cloudflare API mock、D1 repository、edge rate limiting、來源 IP fail-closed、串流 body/content type/size、scheduled retention、完整 migration chain、security headers、redaction、SQL/path/query injection、前端狀態與 runtime URL。Coverage 對整個後端核心計算並強制 lines/functions/statements 90%、branches 85%；production 禁止以真實 token 當 fixture。
 
 ## 備份、匯出與還原
 
@@ -265,13 +267,13 @@ npx wrangler d1 time-travel restore REPLACE_AUTO_PROVISIONED_D1_NAME --bookmark 
 
 ## 故障排除
 
-Wrangler 已啟用 100% invocation logs 並持久化到 Cloudflare Workers Logs；設定變更需重新部署才會生效。即時追蹤 production Worker：
+Wrangler 保留 100% Workers Logs，但關閉會自動包含完整 URL 的 invocation logs，改由 Worker 對每次請求輸出 `request_completed` custom event；內容只有 method、pathname、status，刻意不包含 query、headers 或 body。錯誤另有安全 category/stage。這保留可診斷性，同時避免設備誤把 token 放進 query 時由自動 invocation message 保存完整 URL。設定變更需重新部署才會生效。即時追蹤 production Worker：
 
 ```bash
 npx wrangler tail cloudflare-ddns-worker --format pretty
 ```
 
-先啟動 tail，再重現一次問題。歷史記錄可在 Cloudflare Dashboard → Workers & Pages → `cloudflare-ddns-worker` → Observability → Logs 查詢，並以 request path 與 HTTP status `500` 篩選。
+先啟動 tail，再重現一次問題。歷史記錄可在 Cloudflare Dashboard → Workers & Pages → `cloudflare-ddns-worker` → Observability → Logs 查詢，並以 `event=request_completed`、`pathname` 與 `status=500` 篩選。
 
 - `401 Unauthorized`：token 缺漏/錯誤/已輪替；不要把 Authorization 貼進 log。
 - UniFi 相容端點 `404`：確認該環境沒有把 `ENABLE_UNIFI_COMPAT` 改為 `false`，且使用的是正確 DDNS hostname。
@@ -281,6 +283,17 @@ npx wrangler tail cloudflare-ddns-worker --format pretty
 - `502`：DNS token scope、zone/record 綁定或 Cloudflare API 問題；Client response 刻意不含上游細節。
 - Vue 404/Access bypass：確認 assets 已啟用 `run_worker_first:true` 與 `not_found_handling:single-page-application`、建置產物引用 `/admin/assets/*`、Access application path 是 `ddns.example.com/admin/*`，且沒有 Bypass policy。
 
-Worker log 禁止輸出 Authorization、JWT、cookie、token/hash、secret 或 Cloudflare 原始錯誤。Production 不得啟用 `DETAILED_ERRORS`。建議設定 update/admin audit retention、Cloudflare WAF 與異常 401/429/502 告警。
+Worker log 禁止輸出 query、Authorization、JWT、cookie、token/hash、secret 或 Cloudflare 原始錯誤；DDNS API 也明確禁止任何 query token。若 token 曾誤放在 URL：立即停用該設備設定；在管理頁輪替受影響 Client Token；若誤放的是 DNS API Token，建立新的 Specific-zone Token、以 `wrangler secret put CLOUDFLARE_DNS_API_TOKEN` 切換後撤銷舊 Token；檢查 Workers Logs 的存取與 retention，依事件程序保存必要證據並限制閱覽。不得把完整疑似 URL貼進 issue/chat。Production 不得啟用 `DETAILED_ERRORS`。
+
+每日 cron 會以 `LOG_RETENTION_DAYS`（預設 90 天）為單一保存期，分批刪除 `update_logs` 與 `admin_audit_logs`；每批每表最多 500 筆、單次排程最多 20 批，不在公開 request path 執行 DELETE。Cloudflare Workers Logs 的平台 retention、WAF 與 401/429/502 告警仍須在 Dashboard 人工設定與驗證。
+
+HTTP 預期分兩層：Worker 本身對非 localhost 明文 HTTP 一律 fail closed 回 400，不自行 redirect；若需要 301/308，必須在 Cloudflare Edge 開啟 Always Use HTTPS。驗證：
+
+```bash
+curl -sS -o /dev/null -D - 'http://ddns.example.com/'
+curl -sS -o /dev/null -D - 'https://ddns.example.com/'
+```
+
+第一個命令在 Edge 已啟用 redirect 時必須先看到 301/308 與 HTTPS `Location`；否則會到 Worker 並回 400。第二個命令應回 404，證明 HTTPS Worker route fail closed。
 
 完整上線順序與回復點見 [部署 Runbook](docs/deployment.md)。

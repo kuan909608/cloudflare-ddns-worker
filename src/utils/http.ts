@@ -55,6 +55,19 @@ export async function strictEmptyJson(request: Request): Promise<void> {
   }
 }
 
+export async function strictEmptyBody(request: Request): Promise<void> {
+  if (!request.body) return;
+  const reader = request.body.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    if (value.byteLength > 0) {
+      await reader.cancel();
+      throw new AppError(400, 'Request body must be empty', 'INVALID_REQUEST_BODY');
+    }
+  }
+}
+
 export function enforceSameOrigin(request: Request, expectedHost: string): void {
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') throw new AppError(403, 'Forbidden', 'FORBIDDEN');
   const origin = request.headers.get('Origin');

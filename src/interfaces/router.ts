@@ -8,8 +8,8 @@ import { verifyAccess } from '../services/access-service';
 import { CloudflareDnsService } from '../services/cloudflare-dns-service';
 import { rateLimitSource } from '../services/ip-service';
 import type { Env } from '../types';
-import { basicCredentials, boundedInteger, enforceSameOrigin, errorResponse, json, strictEmptyJson, strictJson, success } from '../utils/http';
-import { logRequestError } from '../utils/observability';
+import { basicCredentials, boundedInteger, enforceSameOrigin, errorResponse, json, strictEmptyBody, strictEmptyJson, strictJson, success } from '../utils/http';
+import { logRequestCompletion, logRequestError } from '../utils/observability';
 import { securityHeaders } from '../utils/security';
 
 const idPattern = '[0-9a-fA-F-]{36}';
@@ -26,15 +26,17 @@ async function ddns(request: Request, env: Env, url: URL): Promise<Response> {
   const compatMatch = url.pathname.match(/^\/api\/ddns\/([a-z0-9][a-z0-9-]{1,62})\/unifi$/u);
   if (compatMatch) return unifiCompat(request, env, url, compatMatch[1]!);
   if (request.method !== 'POST' || url.search) throw errors.notFound();
-  if (request.body !== null) throw errors.badRequest('Request body must be empty');
   const match = url.pathname.match(/^\/api\/ddns\/([a-z0-9][a-z0-9-]{1,62})$/u); if (!match) throw errors.notFound();
+  const source = rateLimitSource(request);
+  if (!source) throw errors.badRequest('Invalid CF-Connecting-IP');
+  await enforceRateLimit(env.DDNS_PREAUTH_RATE_LIMITER, `ddns-preauth:${source}`);
+  await strictEmptyBody(request);
   const repository = new D1ClientRepository(env.DDNS_DB);
   const useCase = new DdnsUpdateUseCase(
     repository,
     new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN),
     env.ALLOW_PRIVATE_IPS === 'true',
-    (incoming) => enforceRateLimit(env.DDNS_DB, `ddns-preauth:${rateLimitSource(incoming)}`, 60),
-    (clientId) => enforceRateLimit(env.DDNS_DB, `ddns-client:${clientId}`, 10),
+    (clientId) => enforceRateLimit(env.DDNS_CLIENT_RATE_LIMITER, `ddns-client:${clientId}`),
   );
   const result = await useCase.execute(match[1]!, request);
   return json({ success: true, updated: result.updated });
@@ -45,6 +47,9 @@ async function unifiCompat(request: Request, env: Env, url: URL, slug: string): 
   if (request.method !== 'GET' || request.body !== null) throw errors.notFound();
   const forbiddenQueryKeys = new Set(['token', 'password', 'passwd', 'key', 'apikey', 'api_key', 'auth', 'authorization', 'secret', 'address', 'target', 'record', 'recordid', 'recordname', 'domain', 'zone', 'zoneid', 'zonename']);
   if ([...url.searchParams.keys()].some((key) => forbiddenQueryKeys.has(key.toLowerCase()))) throw errors.badRequest('Credential and record query parameters are not accepted');
+  const source = rateLimitSource(request);
+  if (!source) throw errors.badRequest('Invalid CF-Connecting-IP');
+  await enforceRateLimit(env.DDNS_PREAUTH_RATE_LIMITER, `ddns-preauth:${source}`);
   const credentials = basicCredentials(request);
   if (!credentials || credentials.username !== slug) throw errors.unauthorized();
   const repository = new D1ClientRepository(env.DDNS_DB);
@@ -52,8 +57,7 @@ async function unifiCompat(request: Request, env: Env, url: URL, slug: string): 
     repository,
     new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN),
     env.ALLOW_PRIVATE_IPS === 'true',
-    (incoming) => enforceRateLimit(env.DDNS_DB, `ddns-preauth:${rateLimitSource(incoming)}`, 60),
-    (clientId) => enforceRateLimit(env.DDNS_DB, `ddns-client:${clientId}`, 10),
+    (clientId) => enforceRateLimit(env.DDNS_CLIENT_RATE_LIMITER, `ddns-client:${clientId}`),
   );
   const result = await useCase.executeWithToken(slug, request, credentials.password);
   return new Response(`${result.updated ? 'good' : 'nochg'} ${result.ip}\n`, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
@@ -65,7 +69,7 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     if (!['GET', 'HEAD'].includes(request.method)) throw errors.notFound();
     return env.ASSETS.fetch(request);
   }
-  await enforceRateLimit(env.DDNS_DB, `admin:${identity.email}`, 60);
+  await enforceRateLimit(env.ADMIN_RATE_LIMITER, `admin:${identity.email}`);
   if (['POST', 'PUT', 'DELETE'].includes(request.method)) enforceSameOrigin(request, url.hostname);
   const repository = new D1ClientRepository(env.DDNS_DB); const dns = new CloudflareDnsService(env.CLOUDFLARE_DNS_API_TOKEN); const zone = configuredDnsZone(env); const useCase = new AdminClientsUseCase(repository, dns, zone);
   const listPath = url.pathname === '/admin/api/clients';
@@ -101,12 +105,14 @@ export async function route(request: Request, env: Env): Promise<Response> {
     else if (url.pathname.startsWith('/api/ddns/')) response = await ddns(request, env, url);
     else if (isAdminPath(url.pathname)) response = await admin(request, env, url);
     else throw errors.notFound();
+    logRequestCompletion(request, url.pathname, response.status);
     return securityHeaders(response);
   } catch (error) {
     const pathname = new URL(request.url).pathname;
     const forced = error instanceof AppError && isAdminPath(pathname) && [401, 403].includes(error.status) ? new AppError(403, 'Forbidden', 'FORBIDDEN') : error;
     const response = errorResponse(forced, env.DETAILED_ERRORS === 'true' && env.ENVIRONMENT !== 'production');
     if (response.status >= 500) logRequestError(request, pathname, forced, response.status);
+    logRequestCompletion(request, pathname, response.status);
     return securityHeaders(response);
   }
 }

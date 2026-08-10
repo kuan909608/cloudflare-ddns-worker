@@ -5,7 +5,9 @@ import type { Env } from '../src/types';
 
 const baseEnv = {
   ENVIRONMENT:'production', APP_HOST:'ddns.example.com', ALLOW_PRIVATE_IPS:'false', DETAILED_ERRORS:'false',
-} as Env;
+  DDNS_PREAUTH_RATE_LIMITER:{ limit:vi.fn(async()=>({success:true})) },
+  DDNS_CLIENT_RATE_LIMITER:{ limit:vi.fn(async()=>({success:true})) },
+} as unknown as Env;
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -46,7 +48,7 @@ describe('UniFi compatibility route security', () => {
   });
 
   it('rejects missing Basic credentials before accessing persistence', async () => {
-    const response = await route(new Request('https://ddns.example.com/api/ddns/linhome/unifi'), { ...baseEnv, ENABLE_UNIFI_COMPAT:'true' });
+    const response = await route(new Request('https://ddns.example.com/api/ddns/linhome/unifi', { headers:{'CF-Connecting-IP':'8.8.8.8'} }), { ...baseEnv, ENABLE_UNIFI_COMPAT:'true' });
     expect(response.status).toBe(401);
   });
 
@@ -61,7 +63,7 @@ describe('UniFi compatibility route security', () => {
   it('requires Basic username to equal path slug', async () => {
     const password = `ddns_${'a'.repeat(32)}`;
     const response = await route(new Request('https://ddns.example.com/api/ddns/linhome/unifi', {
-      headers:{ Authorization:`Basic ${btoa(`other:${password}`)}` },
+      headers:{ Authorization:`Basic ${btoa(`other:${password}`)}`, 'CF-Connecting-IP':'8.8.8.8' },
     }), { ...baseEnv, ENABLE_UNIFI_COMPAT:'true' });
     expect(response.status).toBe(401);
   });
@@ -83,6 +85,36 @@ describe('UniFi compatibility route security', () => {
 });
 
 describe('primary DDNS route', () => {
+  it('accepts a real zero-byte POST body stream', async () => {
+    const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+    const request = new Request('https://ddns.example.com/api/ddns/linhome', {
+      method:'POST',
+      headers:{ 'CF-Connecting-IP':'8.8.8.8' },
+      body:stream,
+      duplex:'half',
+    } as RequestInit & { duplex:'half' });
+
+    const response = await route(request, baseEnv);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ success:false, message:'Unauthorized' });
+  });
+
+  it('stops at the edge limiter before any D1 lookup', async () => {
+    const limit = vi.fn(async()=>({success:false}));
+    const response = await route(new Request('https://ddns.example.com/api/ddns/linhome', {
+      method:'POST', headers:{ Authorization:`Bearer ddns_${'x'.repeat(32)}`, 'CF-Connecting-IP':'8.8.8.8' },
+    }), { ...baseEnv, DDNS_PREAUTH_RATE_LIMITER:{limit} as RateLimit });
+    expect(response.status).toBe(429);
+    expect(limit).toHaveBeenCalledWith({key:'ddns-preauth:8.8.8.8'});
+  });
+
+  it('fails closed when CF-Connecting-IP is missing or malformed', async () => {
+    const auth = { Authorization:`Bearer ddns_${'x'.repeat(32)}`, 'X-Forwarded-For':'8.8.8.8' };
+    expect((await route(new Request('https://ddns.example.com/api/ddns/linhome', {method:'POST',headers:auth}), baseEnv)).status).toBe(400);
+    expect((await route(new Request('https://ddns.example.com/api/ddns/linhome', {method:'POST',headers:{...auth,'CF-Connecting-IP':'invalid'}}), baseEnv)).status).toBe(400);
+  });
+
   it('rejects plaintext HTTP before reading any credential', async () => {
     const response = await route(new Request('http://ddns.example.com/api/ddns/linhome', {
       method:'POST', headers:{ Authorization:`Bearer ddns_${'x'.repeat(32)}` },

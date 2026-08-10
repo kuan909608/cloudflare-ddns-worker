@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { curlCommand, unifiSettings } from '../services/connection-details';
 
-const props = defineProps<{ token: string; slug: string; ddnsOrigin: string; hostname?: string }>();
+const props = defineProps<{ token: string; slug: string; ddnsOrigin: string; hostname?: string; unifiCompatibilityEnabled: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const copied = ref(false);
 
@@ -27,7 +27,7 @@ function unifi() {
         <div class="action-group mt-5">
           <button class="btn-primary" @click="copy(token)">{{ copied ? '已複製' : '複製 Token' }}</button>
           <button class="btn-secondary" @click="copy(curlCommand(props.ddnsOrigin, props.slug, props.token))">複製 curl</button>
-          <button class="btn-secondary" @click="copy(unifi())">複製 UniFi</button>
+          <button v-if="props.unifiCompatibilityEnabled" class="btn-secondary" @click="copy(unifi())">複製 UniFi</button>
           <button class="btn-secondary" @click="emit('close')">我已安全保存</button>
         </div>
       </div>
